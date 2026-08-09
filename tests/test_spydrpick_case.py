@@ -17,13 +17,13 @@ class SpydrPickSummaryTests(unittest.TestCase):
             root = Path(directory)
             raw = root / "raw.edges"
             raw.write_text(
-                "10 20 10 1 0.9\n10 30 20 1 0.8\n20 30 10 1 0.7\n"
-                "10 40 30 1 0.6\n20 40 20 1 0.5\n30 40 10 1 0.4\n",
+                "1 2 1 1 0.9\n1 3 2 1 0.8\n2 3 1 1 0.7\n"
+                "1 4 3 1 0.6\n2 4 2 1 0.5\n3 4 1 1 0.4\n",
                 encoding="utf-8",
             )
             metadata = compress_and_summarize(
                 raw, root / "edges.gz", root / "truth.tsv",
-                {10: 0, 20: 1, 30: 2, 40: 3},
+                [10, 20, 30, 40],
                 {"A": 10, "B": 20, "C": 30, "D": 40}, 4,
             )
             self.assertEqual(metadata["n_pairs"], 6)
@@ -35,17 +35,19 @@ class SpydrPickSummaryTests(unittest.TestCase):
             self.assertEqual(rows[1]["pair"], "CD")
             self.assertEqual(rows[1]["rank_min"], "6")
             with gzip.open(root / "edges.gz", "rt", encoding="utf-8") as handle:
-                self.assertEqual(sum(1 for _ in handle), 6)
+                normalized = handle.readlines()
+            self.assertEqual(len(normalized), 6)
+            self.assertEqual(normalized[0].split()[:3], ["0", "1", "10"])
 
     def test_missing_pair_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw.edges"
-            raw.write_text("10 20 10 1 0.9\n", encoding="utf-8")
+            raw.write_text("1 2 1 1 0.9\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "all 3 pairs"):
                 compress_and_summarize(
                     raw, root / "edges.gz", root / "truth.tsv",
-                    {10: 0, 20: 1, 30: 2},
+                    [10, 20, 30],
                     {"A": 10, "B": 20, "C": 20, "D": 30}, 3,
                 )
 
@@ -53,10 +55,10 @@ class SpydrPickSummaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw.edges"
-            raw.write_text("10 20 10 1 0.9\n", encoding="utf-8")
+            raw.write_text("1 2 1 1 0.9\n", encoding="utf-8")
             compress_and_summarize(
                 raw, root / "edges.gz", root / "truth.tsv",
-                {10: 0, 20: 1}, {"A": 10, "B": 99, "C": 10, "D": 20}, 2,
+                [10, 20], {"A": 10, "B": 99, "C": 10, "D": 20}, 2,
             )
             with (root / "truth.tsv").open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))

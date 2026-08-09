@@ -49,10 +49,11 @@ def compress_and_summarize(
     raw_edges: Path,
     compressed_edges: Path,
     truth_output: Path,
-    position_to_column: dict[int, int],
+    positions: list[int],
     truth: dict[str, int],
     n_loci: int,
 ) -> dict[str, object]:
+    position_to_column = {position: column for column, position in enumerate(positions)}
     targets = {
         tuple(sorted((truth[left], truth[right]))): left + right
         for left, right in TRUTH_PAIRS
@@ -70,14 +71,14 @@ def compress_and_summarize(
         for line in source:
             if not line.strip():
                 continue
-            pos1, pos2, distance, aracne, mi = parse_edge(line)
-            if pos1 not in position_to_column or pos2 not in position_to_column:
-                raise ValueError(f"edge position absent from mapping: {pos1}, {pos2}")
-            if distance != abs(pos2 - pos1):
-                raise ValueError(
-                    f"SpydrPick distance {distance} disagrees with mapped physical distance "
-                    f"{abs(pos2 - pos1)} for {pos1}, {pos2}"
-                )
+            raw1, raw2, _raw_distance, aracne, mi = parse_edge(line)
+            # Bioconda SpydrPick 1.2.0 lacks --mappings-list. Its default output
+            # is one-based alignment-column indices, which we map back here.
+            col1, col2 = raw1 - 1, raw2 - 1
+            if not (0 <= col1 < n_loci and 0 <= col2 < n_loci):
+                raise ValueError(f"edge column outside the alignment: {raw1}, {raw2}")
+            pos1, pos2 = positions[col1], positions[col2]
+            distance = abs(pos2 - pos1)
             if mi > previous_mi + 1e-12:
                 raise ValueError("SpydrPick edges are not sorted by descending MI")
             edge_count += 1
@@ -85,14 +86,16 @@ def compress_and_summarize(
                 tie_value = mi
                 tie_start = edge_count
             previous_mi = mi
-            destination.write(line)
+            # Normalized schema remains SpydrPick's five fields, but positions
+            # are zero-based alignment columns and distance is physical bp.
+            destination.write(f"{col1} {col2} {distance} {aracne} {mi:.17g}\n")
             key = tuple(sorted((pos1, pos2)))
             if key in targets:
                 label = targets[key]
                 found[label] = {
                     "pair": label,
-                    "u_column": position_to_column[pos1],
-                    "v_column": position_to_column[pos2],
+                    "u_column": col1,
+                    "v_column": col2,
                     "u_position": pos1,
                     "v_position": pos2,
                     "physical_distance": abs(pos2 - pos1),
@@ -164,13 +167,10 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=output.name + ".tmp.", dir=output.parent))
     try:
-        mapping = temporary / "slim_positions.0based.txt"
-        mapping.write_text("\n".join(map(str, positions)) + "\n", encoding="utf-8")
         command = [
             executable, "--verbose", f"--threads={threads}", "--no-aracne",
-            "--mi-threshold=0", "--no-filter-alignment", "--linear-genome",
-            f"--mappings-list={mapping}", "--input-indexing-base=0",
-            "--output-indexing-base=0", str(case_dir / "all_snps.fa"),
+            "--mi-threshold=0", "--no-filter-alignment",
+            str(case_dir / "all_snps.fa"),
         ]
         if unweighted:
             command.insert(-1, "--no-sample-reweighting")
@@ -181,18 +181,19 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
             )
         if completed.returncode:
             raise RuntimeError(f"SpydrPick exited {completed.returncode}; see {temporary / 'spydrpick.log'}")
-        edges = list(temporary.glob("*.spydrpick_couplings.0-based.*edges"))
+        edges = list(temporary.glob("*.spydrpick_couplings.*-based.*edges"))
         if len(edges) != 1:
             raise RuntimeError(f"expected one edges file, found {len(edges)}")
         metadata = compress_and_summarize(
             edges[0], temporary / "spydrpick.edges.gz", temporary / "truth_pairs.tsv",
-            position_to_column, truth, len(positions),
+            positions, truth, len(positions),
         )
         edges[0].unlink()
         metadata.update({
             "case_dir": str(case_dir), "command": command,
             "sample_reweighting": "off" if unweighted else "SpydrPick default",
             "aracne": False, "mi_threshold": 0,
+            "edge_schema": "zero-based alignment columns; physical distance in bp; ARACNE flag; MI",
         })
         (temporary / "run_metadata.json").write_text(
             json.dumps(metadata, indent=2) + "\n", encoding="utf-8"

@@ -205,7 +205,10 @@ This example runs two cases concurrently and gives each SpydrPick process four
 threads, for at most eight compute threads. The runner uses `--mi-threshold=0`,
 `--no-aracne`, and `--no-filter-alignment`, and verifies that the output contains
 exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
-primary comparison. The optional unweighted sensitivity analysis is:
+primary comparison. Because the packaged SpydrPick 1.2.0 executable does not support
+`--mappings-list`, the runner converts its one-based alignment-column output to
+zero-based columns and physical distances using `all_snps.positions.tsv`. The
+optional unweighted sensitivity analysis is:
 
 ```bash
 python scripts/run_spydrpick_manifest.py \

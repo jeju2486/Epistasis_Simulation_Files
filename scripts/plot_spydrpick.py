@@ -15,12 +15,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from simflow import read_tsv, repo_path
-from spydrpick_case import parse_edge
+from spydrpick_case import parse_edge, read_positions
 
 
 def plot_case(case_dir: Path, genome_length: int, bins: int, result_name: str) -> list[dict[str, str]]:
     result = case_dir / result_name
     truth = read_tsv(result / "truth_pairs.tsv")
+    positions, _position_to_column = read_positions(case_dir / "all_snps.positions.tsv")
     total_pairs = int(truth[0]["total_pairs"])
     rank_stride = max(1, math.ceil(total_pairs / 100_000))
     sampled_ranks: list[int] = []
@@ -30,7 +31,8 @@ def plot_case(case_dir: Path, genome_length: int, bins: int, result_name: str) -
         for rank, line in enumerate(handle, start=1):
             if not line.strip():
                 continue
-            p1, p2, _distance, _aracne, mi = parse_edge(line)
+            col1, col2, _distance, _aracne, mi = parse_edge(line)
+            p1, p2 = positions[col1], positions[col2]
             if rank == 1 or rank == total_pairs or rank % rank_stride == 0:
                 sampled_ranks.append(rank)
                 sampled_mi.append(mi)
