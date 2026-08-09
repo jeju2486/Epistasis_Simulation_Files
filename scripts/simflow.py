@@ -31,6 +31,12 @@ def deterministic_seed(master_seed: int, *parts: object) -> int:
     return seed or 1
 
 
+def to_msprime_seed(seed: int) -> int:
+    """Map a positive SLiM seed deterministically into msprime's 32-bit range."""
+    mapped = seed % ((1 << 32) - 1)
+    return mapped or 1
+
+
 def probability_slug(value: float) -> str:
     if value == 0:
         return "0"

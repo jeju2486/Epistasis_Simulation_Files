@@ -13,6 +13,8 @@ from pathlib import Path
 import pyslim
 import tskit
 
+from simflow import to_msprime_seed
+
 
 def sample_labels(path: Path) -> dict[int, str]:
     with open(path, encoding="utf-8", newline="") as handle:
@@ -32,7 +34,11 @@ def export(
 ) -> int:
     labels_by_pedigree = sample_labels(sample_map_path)
     ts = tskit.load(trees_path)
-    ts = pyslim.recapitate(ts, ancestral_Ne=ancestral_ne, random_seed=seed)
+    ts = pyslim.recapitate(
+        ts,
+        ancestral_Ne=ancestral_ne,
+        random_seed=to_msprime_seed(seed),
+    )
 
     old_nodes: list[int] = []
     old_labels: dict[int, str] = {}

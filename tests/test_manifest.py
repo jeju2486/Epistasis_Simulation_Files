@@ -9,7 +9,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from build_manifest import build  # noqa: E402
-from simflow import deterministic_seed, probability_slug  # noqa: E402
+from simflow import deterministic_seed, probability_slug, to_msprime_seed  # noqa: E402
 
 
 class ManifestTests(unittest.TestCase):
@@ -77,6 +77,14 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(probability_slug(0.0), "0")
         self.assertEqual(probability_slug(0.002), "0p002")
         self.assertEqual(probability_slug(0.02), "0p02")
+
+    def test_msprime_seed_is_deterministic_and_in_range(self) -> None:
+        self.assertEqual(to_msprime_seed(1), 1)
+        self.assertEqual(to_msprime_seed((1 << 32) - 1), 1)
+        mapped = to_msprime_seed(3163853192524712447)
+        self.assertGreater(mapped, 0)
+        self.assertLess(mapped, 1 << 32)
+        self.assertEqual(mapped, to_msprime_seed(3163853192524712447))
 
 
 if __name__ == "__main__":
