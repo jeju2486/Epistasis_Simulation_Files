@@ -1,0 +1,45 @@
+[paths]
+reference = "inputs/smoke_reference.fa"
+checkpoint_root = "checkpoints_smoke"
+run_root = "runs_smoke"
+manifest_root = "manifests_smoke"
+
+[design]
+replicates = 1
+modes = [0, 1]
+cross_hgt_probabilities = [0.0]
+master_seed = 8675309
+
+[genome]
+length = 10000
+reference_seed = 42
+mutation_rate = 1e-4
+mean_hgt_tract = 100
+within_hgt_probability = 0.02
+
+[population]
+ancestral_size = 200
+clade_size = 100
+terminal_size = 50
+sample_per_terminal = 10
+ancestral_generations = 500
+deep_clade_generations = 50
+terminal_generations = 50
+
+[loci]
+global_frequency_min = 0.10
+global_frequency_max = 0.90
+lineage_frequency_min = 0.05
+lineage_frequency_max = 0.95
+minimum_distance = 1000
+maximum_initial_r2 = 1.0
+
+[experiment]
+generations = 10
+s_ab = 0.01
+s_cd = 0.015
+monitor_every = 5
+
+[postprocess]
+ancestral_ne = 200
+oracle_tree_position = 5000

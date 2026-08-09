@@ -5,9 +5,13 @@ __pycache__/
 
 # Generated simulation material
 inputs/reference.fa
+inputs/smoke_reference.fa
 manifests/*.tsv
+manifests_smoke/
 runs/
 checkpoints/
+runs_smoke/
+checkpoints_smoke/
 summaries/
 
 # SLiM / phylogeny outputs

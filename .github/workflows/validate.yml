@@ -24,3 +24,10 @@ jobs:
         run: |
           slim -c slim/build_checkpoint.slim
           slim -c slim/continue_experiment.slim
+      - name: End-to-end smoke simulation
+        run: |
+          python scripts/prepare_inputs.py --config config/smoke.toml
+          python scripts/build_manifest.py --config config/smoke.toml
+          python scripts/run_manifest.py --manifest manifests_smoke/checkpoints.tsv --stage checkpoint --jobs 1
+          python scripts/run_manifest.py --manifest manifests_smoke/cases.tsv --stage case --jobs 1
+          python scripts/show_status.py manifests_smoke/checkpoints.tsv manifests_smoke/cases.tsv
