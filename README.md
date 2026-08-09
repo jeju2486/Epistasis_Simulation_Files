@@ -66,12 +66,14 @@ mutations subject to predeclared criteria:
 
 - global derived-state frequency 0.30-0.70;
 - frequency 0.20-0.80 in every terminal population;
-- minimum physical separation 20 kb;
-- initial pairwise `r^2 <= 0.02`.
+- minimum physical separation 10 kb (20 times the mean HGT tract).
 
-The checkpoint fails visibly if no qualifying quartet exists. It does not silently
-seed or choose loci using future association results. The same checkpoint and the
-same A-D mutations are used for all paired continuations.
+Initial pairwise `r^2` is recorded for all six A-D pairs but is deliberately not used
+for selection. Screening truth loci on observed LD would condition the benchmark on
+an association statistic related to SpydrPick. Instead, the paired Mode 0 continuation
+measures any pre-existing LD. The checkpoint fails visibly if no distance-compatible
+quartet exists; it does not silently seed or use future results. The same checkpoint
+and the same A-D mutations are used for all paired continuations.
 
 ## Workflow
 
@@ -131,6 +133,26 @@ python scripts/show_status.py manifests/checkpoints.tsv manifests/cases.tsv
 
 A case is complete only when its `_SUCCESS` marker exists. Partial outputs are never
 treated as successful runs.
+
+### Five replicates per setting
+
+The convenience launcher uses the full pilot parameters but limits the design to five
+matched replicates. With two modes and three cross-lineage HGT values, it creates five
+checkpoints and 30 continuations:
+
+```bash
+micromamba activate epistasis-sim
+bash scripts/run_five_replicates.sh
+```
+
+Parallelism can be adjusted without editing the script:
+
+```bash
+CHECKPOINT_JOBS=1 CASE_JOBS=4 bash scripts/run_five_replicates.sh
+```
+
+The launcher is restart-safe: completed output directories containing `_SUCCESS` are
+skipped. Its settings are in [`config/five_replicates.toml`](config/five_replicates.toml).
 
 ## Outputs
 

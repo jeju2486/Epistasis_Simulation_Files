@@ -34,7 +34,6 @@ def checkpoint_command(row: dict[str, str]) -> list[str]:
         "--lineage-freq-min", row["lineage_frequency_min"],
         "--lineage-freq-max", row["lineage_frequency_max"],
         "--minimum-distance", row["minimum_distance"],
-        "--maximum-r2", row["maximum_initial_r2"],
     ]
 
 

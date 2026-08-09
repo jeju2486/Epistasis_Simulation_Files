@@ -9,7 +9,7 @@ GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN=""
 N_ANCESTRAL="" N_CLADE="" N_TERMINAL=""
 ANCESTRAL_GENERATIONS="" DEEP_GENERATIONS="" TERMINAL_GENERATIONS=""
 GLOBAL_FREQ_MIN="" GLOBAL_FREQ_MAX="" LINEAGE_FREQ_MIN="" LINEAGE_FREQ_MAX=""
-MINIMUM_DISTANCE="" MAXIMUM_R2=""
+MINIMUM_DISTANCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,12 +31,11 @@ while [[ $# -gt 0 ]]; do
     --lineage-freq-min) LINEAGE_FREQ_MIN="$2"; shift 2 ;;
     --lineage-freq-max) LINEAGE_FREQ_MAX="$2"; shift 2 ;;
     --minimum-distance) MINIMUM_DISTANCE="$2"; shift 2 ;;
-    --maximum-r2) MAXIMUM_R2="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS GLOBAL_FREQ_MIN GLOBAL_FREQ_MAX LINEAGE_FREQ_MIN LINEAGE_FREQ_MAX MINIMUM_DISTANCE MAXIMUM_R2)
+required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS GLOBAL_FREQ_MIN GLOBAL_FREQ_MAX LINEAGE_FREQ_MIN LINEAGE_FREQ_MAX MINIMUM_DISTANCE)
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
@@ -98,7 +97,6 @@ global_frequency_max	$GLOBAL_FREQ_MAX
 lineage_frequency_min	$LINEAGE_FREQ_MIN
 lineage_frequency_max	$LINEAGE_FREQ_MAX
 minimum_distance	$MINIMUM_DISTANCE
-maximum_initial_r2	$MAXIMUM_R2
 EOF
 
 "$SLIM_BIN" -s "$SEED" \
@@ -121,7 +119,6 @@ EOF
   -d "LINEAGE_FREQ_MIN=$LINEAGE_FREQ_MIN" \
   -d "LINEAGE_FREQ_MAX=$LINEAGE_FREQ_MAX" \
   -d "MIN_DISTANCE=$MINIMUM_DISTANCE" \
-  -d "MAX_INITIAL_R2=$MAXIMUM_R2" \
   "$REPO_ROOT/slim/build_checkpoint.slim" \
   > "$TMPDIR_RUN/slim.log" 2>&1
 

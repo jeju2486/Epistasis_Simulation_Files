@@ -5,7 +5,9 @@ run_root = "runs"
 manifest_root = "manifests"
 
 [design]
-replicates = 50
+# Five matched biological replicates for each mode x cross-HGT setting.
+# This expands to 5 checkpoints and 5 x 2 x 3 = 30 continuations.
+replicates = 5
 modes = [0, 1]
 cross_hgt_probabilities = [0.0, 0.002, 0.02]
 master_seed = 20260809

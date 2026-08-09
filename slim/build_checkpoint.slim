@@ -27,8 +27,7 @@ initialize() {
     if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.70);
     if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.20);
     if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.80);
-    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 20000);
-    if (!exists("MAX_INITIAL_R2")) defineConstant("MAX_INITIAL_R2", 0.02);
+    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 10000);
 
     defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
     defineConstant("TERMINAL_SPLIT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);
@@ -55,6 +54,7 @@ function (integer$) targetSize(o<Subpopulation>$ pop) {
 
 function (object<Mutation>) chooseStandingLoci(void) {
     muts = sim.mutationsOfType(m1);
+    sim.setValue("total_mutation_count", size(muts));
     if (size(muts) < 4)
         stop("Fewer than four segregating mutations exist at checkpoint.");
 
@@ -71,55 +71,36 @@ function (object<Mutation>) chooseStandingLoci(void) {
            (f4 >= LINEAGE_FREQ_MIN) & (f4 <= LINEAGE_FREQ_MAX);
 
     candidates = muts[keep];
+    sim.setValue("frequency_candidate_count", size(candidates));
     if (size(candidates) < 4)
         stop("Fewer than four mutations pass the standing-variation frequency criteria.");
 
-    allHaplosomes = sim.subpopulations.haplosomesNonNull;
-    chosen = NULL;
+    // For points on a line, greedily taking the leftmost eligible point gives
+    // a maximum-cardinality distance-compatible set. Unlike the former
+    // randomized search, this cannot report a false failure. Initial LD is
+    // measured below but is not used to condition which truth loci are chosen.
+    ordered = candidates[order(candidates.position)];
+    spaced = ordered[0];
+    for (i in 1:(size(ordered) - 1)) {
+        candidate = ordered[i];
+        if ((candidate.position - spaced[size(spaced) - 1].position) >= MIN_DISTANCE)
+            spaced = c(spaced, candidate);
+    }
+    sim.setValue("max_distance_compatible_count", size(spaced));
 
-    // Repeat the randomized greedy search so a poor first ordering does not
-    // cause a false checkpoint failure when a valid quartet exists.
-    for (attempt in 1:100) {
-        chosen = NULL;
-        shuffled = sample(candidates, size(candidates));
-
-        for (candidate in shuffled) {
-            acceptable = T;
-
-            if (!isNULL(chosen)) {
-                for (existing in chosen) {
-                    if (abs(candidate.position - existing.position) < MIN_DISTANCE) {
-                        acceptable = F;
-                        break;
-                    }
-
-                    r2 = calcLD_Rsquared(candidate, existing, haplosomes=allHaplosomes);
-                    if (isNAN(r2) | (r2 > MAX_INITIAL_R2)) {
-                        acceptable = F;
-                        break;
-                    }
-                }
-            }
-
-            if (acceptable) {
-                if (isNULL(chosen))
-                    chosen = candidate;
-                else
-                    chosen = c(chosen, candidate);
-            }
-
-            if (!isNULL(chosen) & (size(chosen) == 4))
-                break;
-        }
-
-        if (!isNULL(chosen) & (size(chosen) == 4))
-            break;
+    if (size(spaced) < 4) {
+        diagnostics = "metric\tvalue\n" +
+                      "total_mutation_count\t" + size(muts) + "\n" +
+                      "frequency_candidate_count\t" + size(candidates) + "\n" +
+                      "max_distance_compatible_count\t" + size(spaced) + "\n" +
+                      "minimum_distance\t" + MIN_DISTANCE + "\n";
+        writeFile(METRICS_FILE, diagnostics, append=F);
+        stop("No distance-compatible quartet exists: " + size(candidates) +
+             " frequency-eligible mutations yield at most " + size(spaced) +
+             " loci separated by " + MIN_DISTANCE + " bp.");
     }
 
-    if (isNULL(chosen) | (size(chosen) != 4))
-        stop("No quartet passes the distance and initial-LD criteria.");
-
-    return chosen[order(chosen.position)];
+    return spaced[0:3];
 }
 
 function (void) writeCheckpointMetrics(object<Mutation> loci) {
@@ -145,7 +126,10 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
               "p2_size\t" + p2.individualCount + "\n" +
               "p3_size\t" + p3.individualCount + "\n" +
               "p4_size\t" + p4.individualCount + "\n" +
-              "candidate_count\t" + size(sim.mutationsOfType(m1)) + "\n";
+              "total_mutation_count\t" + sim.getValue("total_mutation_count") + "\n" +
+              "frequency_candidate_count\t" + sim.getValue("frequency_candidate_count") + "\n" +
+              "max_distance_compatible_count\t" + sim.getValue("max_distance_compatible_count") + "\n" +
+              "minimum_distance\t" + MIN_DISTANCE + "\n";
 
     for (i in 0:2) {
         for (j in (i + 1):3) {

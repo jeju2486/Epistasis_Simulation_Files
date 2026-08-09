@@ -32,7 +32,6 @@ global_frequency_max = 0.90
 lineage_frequency_min = 0.05
 lineage_frequency_max = 0.95
 minimum_distance = 1000
-maximum_initial_r2 = 1.0
 
 [experiment]
 generations = 10

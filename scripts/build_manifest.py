@@ -64,7 +64,6 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                 "lineage_frequency_min": loci["lineage_frequency_min"],
                 "lineage_frequency_max": loci["lineage_frequency_max"],
                 "minimum_distance": loci["minimum_distance"],
-                "maximum_initial_r2": loci["maximum_initial_r2"],
             }
         )
 

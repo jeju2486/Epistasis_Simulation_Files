@@ -47,7 +47,6 @@ class ManifestTests(unittest.TestCase):
                 "lineage_frequency_min": 0.2,
                 "lineage_frequency_max": 0.8,
                 "minimum_distance": 20,
-                "maximum_initial_r2": 0.02,
             },
             "experiment": {
                 "generations": 10,
