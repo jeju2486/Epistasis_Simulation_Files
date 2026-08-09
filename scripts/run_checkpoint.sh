@@ -126,7 +126,7 @@ EOF
   > "$TMPDIR_RUN/slim.log" 2>&1
 
 [[ -s "$TMPDIR_RUN/checkpoint.trees" ]] || { echo "Missing checkpoint.trees" >&2; exit 1; }
-[[ $(awk 'END {print NR-1}' "$TMPDIR_RUN/selected_loci.tsv") -eq 4 ]] || { echo "selected_loci.tsv does not contain four loci" >&2; exit 1; }
+python "$REPO_ROOT/scripts/validate_selected_loci.py" "$TMPDIR_RUN/selected_loci.tsv"
 [[ -s "$TMPDIR_RUN/checkpoint_metrics.tsv" ]] || { echo "Missing checkpoint metrics" >&2; exit 1; }
 
 touch "$TMPDIR_RUN/_SUCCESS"
