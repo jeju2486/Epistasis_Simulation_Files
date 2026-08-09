@@ -14,6 +14,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from kovar_inputs import write_binary_fasta
+
 
 TRUTH_PAIRS = (("A", "B"), ("C", "D"))
 
@@ -167,10 +169,16 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=output.name + ".tmp.", dir=output.parent))
     try:
+        binary_alignment = temporary / "all_snps.binary_ac.fa"
+        binary_samples, binary_loci = write_binary_fasta(
+            case_dir / "all_snps.fa", case_dir / "all_snps.positions.tsv", binary_alignment
+        )
+        if binary_loci != len(positions):
+            raise ValueError("binary and position-map locus counts disagree")
         command = [
             executable, "--verbose", f"--threads={threads}", "--no-aracne",
             "--mi-threshold=0", "--no-filter-alignment",
-            str(case_dir / "all_snps.fa"),
+            str(binary_alignment),
         ]
         if unweighted:
             command.insert(-1, "--no-sample-reweighting")
@@ -193,6 +201,8 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
             "case_dir": str(case_dir), "command": command,
             "sample_reweighting": "off" if unweighted else "SpydrPick default",
             "aracne": False, "mi_threshold": 0,
+            "locus_representation": "binary_reference_vs_any_nonreference_A_C",
+            "binary_samples": binary_samples,
             "edge_schema": "zero-based alignment columns; physical distance in bp; ARACNE flag; MI",
         })
         (temporary / "run_metadata.json").write_text(

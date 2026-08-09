@@ -205,7 +205,9 @@ This example runs two cases concurrently and gives each SpydrPick process four
 threads, for at most eight compute threads. The runner uses `--mi-threshold=0`,
 `--no-aracne`, and `--no-filter-alignment`, and verifies that the output contains
 exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
-primary comparison. Because the packaged SpydrPick 1.2.0 executable does not support
+primary comparison. SpydrPick and KOVAR receive the exact same binary A/C matrix:
+reference state is absence and any non-reference state is presence. Because the
+packaged SpydrPick 1.2.0 executable does not support
 `--mappings-list`, the runner converts its one-based alignment-column output to
 zero-based columns and physical distances using `all_snps.positions.tsv`. The
 optional unweighted sensitivity analysis is:
@@ -227,6 +229,59 @@ and C-D highlighted. The heatmap bins the genome for display but every pair
 contributes; it is not a top-N visualization. If a selected locus is lost or
 fixed before sampling, its truth pair is retained with `candidate_status=locus_absent`
 rather than being misreported as a statistical failure.
+
+## KOVAR 0.8.1 analysis
+
+KOVAR must already be installed in the active environment. Confirm the exact
+experimental version before launching:
+
+```bash
+ko-variation --version
+# KO-Variation 0.8.1
+```
+
+After the exhaustive SpydrPick stage completes, run KOVAR across the same candidate
+universe:
+
+```bash
+JOBS=1 THREADS_PER_CASE=8 bash scripts/run_kovar_all.sh
+```
+
+The primary default uses a separately inferred `core_snps.fa` tree, tests both
+directions, uses 5% MAF and a minimum four-cell count of five, disables experimental
+SPA, and disables full alternative-model refits. The score tests and directional
+p-values are still produced; disabling refits avoids potentially tens of thousands
+of expensive effect-estimation fits in an exhaustive scan. Override settings without
+editing the runner, for example:
+
+```bash
+JOBS=1 THREADS_PER_CASE=8 \
+MIN_MAF=0.05 MIN_CELL_COUNT=5 SPA_MODE=off FULL_REFIT_P=0 \
+bash scripts/run_kovar_all.sh
+```
+
+`TREE_MODE=oracle` is available only as a clearly labelled true-tree diagnostic.
+`TREE_MODE=grm` uses KOVAR's same-matrix background-GRM fallback. Neither replaces
+the inferred-core-tree primary analysis.
+
+KOVAR 0.8.1 cannot read the compressed SpydrPick edge file directly. Each case runner
+therefore materializes a temporary plain pair file, runs KOVAR, and removes that copy
+after success. It reuses the exact binary FASTA analyzed by SpydrPick rather than
+performing an independent conversion. `MAX_PAIRS=0` means all pairs and is the primary analysis. A small
+prefix can be used to validate installation and estimate runtime, but it is an
+MI-ranked diagnostic rather than a fair end-to-end result:
+
+```bash
+MAX_PAIRS=10000 JOBS=1 THREADS_PER_CASE=4 bash scripts/run_kovar_all.sh
+```
+
+Diagnostic and alternative-covariance runs use distinct directories, such as
+`kovar_v081_diagnostic_top_10000/`, `kovar_v081_oracle/`, and `kovar_v081_grm/`,
+so they cannot be mistaken for or overwrite the primary exhaustive result.
+
+Results are written under each case's `kovar_v081/` directory. The exact commands,
+tree mode, candidate-universe label, and pair count are recorded in
+`run_metadata.json`; KOVAR's results are in `kovar_v081/results/`.
 
 ## Cross-lineage HGT sensitivity
 
