@@ -74,7 +74,7 @@ function (object<Mutation>) chooseStandingLoci(void) {
     if (size(candidates) < 4)
         stop("Fewer than four mutations pass the standing-variation frequency criteria.");
 
-    allHaplosomes = sim.subpopulations.haplosomes;
+    allHaplosomes = sim.subpopulations.haplosomesNonNull;
     chosen = NULL;
 
     // Repeat the randomized greedy search so a poor first ordering does not
@@ -150,7 +150,7 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
     for (i in 0:2) {
         for (j in (i + 1):3) {
             distance = abs(loci[i].position - loci[j].position);
-            r2 = calcLD_Rsquared(loci[i], loci[j], haplosomes=sim.subpopulations.haplosomes);
+            r2 = calcLD_Rsquared(loci[i], loci[j], haplosomes=sim.subpopulations.haplosomesNonNull);
             metrics = metrics + "distance_" + labels[i] + labels[j] + "\t" + distance + "\n" +
                       "r2_" + labels[i] + labels[j] + "\t" + r2 + "\n";
         }
