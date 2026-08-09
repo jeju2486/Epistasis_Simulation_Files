@@ -15,13 +15,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from simflow import read_tsv, repo_path
-from spydrpick_case import parse_edge, read_positions
+from spydrpick_case import parse_edge
 
 
 def plot_case(case_dir: Path, genome_length: int, bins: int, result_name: str) -> list[dict[str, str]]:
     result = case_dir / result_name
     truth = read_tsv(result / "truth_pairs.tsv")
-    positions, _position_to_column = read_positions(case_dir / "all_snps.positions.tsv")
+    with (result / "eligible_loci.tsv").open(encoding="utf-8", newline="") as handle:
+        positions = [int(row["slim_position"]) for row in csv.DictReader(handle, delimiter="\t")]
     total_pairs = int(truth[0]["total_pairs"])
     rank_stride = max(1, math.ceil(total_pairs / 100_000))
     sampled_ranks: list[int] = []

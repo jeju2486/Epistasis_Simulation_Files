@@ -6,11 +6,14 @@ tmp/
 
 # Generated simulation material
 inputs/reference.fa
+inputs/reference_50kb.fa
 inputs/smoke_reference.fa
 manifests/*.tsv
 manifests_smoke/
 runs/
 checkpoints/
+checkpoints_50kb_mu2e8/
+runs_50kb_mu2e8/
 runs_smoke/
 checkpoints_smoke/
 summaries/

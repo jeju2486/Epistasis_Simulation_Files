@@ -16,7 +16,7 @@ def run_one(row: dict[str, str], args: argparse.Namespace) -> tuple[str, int, st
     command = [
         os.environ.get("PYTHON_BIN", "python3"), "scripts/spydrpick_case.py",
         "--case-dir", row["out_dir"], "--spydrpick", args.spydrpick,
-        "--threads", str(args.threads_per_case),
+        "--threads", str(args.threads_per_case), "--min-maf", str(args.min_maf),
     ]
     if args.force:
         command.append("--force")
@@ -37,6 +37,7 @@ def main() -> None:
     parser.add_argument("--spydrpick", default=os.environ.get("SPYDRPICK_BIN", "SpydrPick"))
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--unweighted", action="store_true")
+    parser.add_argument("--min-maf", type=float, default=0.05)
     args = parser.parse_args()
     if args.jobs < 1 or args.threads_per_case < 1:
         parser.error("job and thread counts must be at least one")

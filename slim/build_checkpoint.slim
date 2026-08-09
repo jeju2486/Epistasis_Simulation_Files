@@ -6,13 +6,13 @@ initialize() {
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
     initializeTreeSeq();
 
-    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference.fa");
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_50kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
     if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
     if (!exists("METRICS_FILE")) defineConstant("METRICS_FILE", "checkpoint_metrics.tsv");
 
-    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
-    if (!exists("MU")) defineConstant("MU", 2e-7);
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 50000);
+    if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
 
@@ -27,7 +27,7 @@ initialize() {
     if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.70);
     if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.20);
     if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.80);
-    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 10000);
+    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 5000);
 
     defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
     defineConstant("TERMINAL_SPLIT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);

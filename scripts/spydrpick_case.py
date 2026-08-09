@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from kovar_inputs import write_binary_fasta
+from kovar_inputs import write_maf_filtered_binary_fasta
 
 
 TRUTH_PAIRS = (("A", "B"), ("C", "D"))
@@ -54,6 +54,7 @@ def compress_and_summarize(
     positions: list[int],
     truth: dict[str, int],
     n_loci: int,
+    all_positions: set[int] | None = None,
 ) -> dict[str, object]:
     position_to_column = {position: column for column, position in enumerate(positions)}
     targets = {
@@ -128,8 +129,14 @@ def compress_and_summarize(
             else:
                 if truth[left] in position_to_column and truth[right] in position_to_column:
                     raise ValueError(f"eligible truth pair absent from all-pair output: {label}")
+                both_sampled = (
+                    all_positions is not None
+                    and truth[left] in all_positions
+                    and truth[right] in all_positions
+                )
+                status = "maf_filtered" if both_sampled else "locus_absent"
                 row = {
-                    "pair": label, "candidate_status": "locus_absent",
+                    "pair": label, "candidate_status": status,
                     "u_column": position_to_column.get(truth[left], ""),
                     "v_column": position_to_column.get(truth[right], ""),
                     "u_position": truth[left], "v_position": truth[right],
@@ -141,7 +148,7 @@ def compress_and_summarize(
     return {"n_loci": n_loci, "n_pairs": edge_count}
 
 
-def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweighted: bool) -> None:
+def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweighted: bool, min_maf: float) -> None:
     case_dir = case_dir.resolve()
     required = [
         case_dir / "_SUCCESS", case_dir / "all_snps.fa",
@@ -158,23 +165,24 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
     if output.exists():
         shutil.rmtree(output)
 
-    positions, position_to_column = read_positions(case_dir / "all_snps.positions.tsv")
+    all_positions, _original_position_to_column = read_positions(case_dir / "all_snps.positions.tsv")
     truth = read_truth(case_dir / "selected_loci.tsv")
-    absent = sorted(set(truth.values()) - set(positions))
+    absent = sorted(set(truth.values()) - set(all_positions))
     if absent:
         print(f"[warning] truth positions absent from sampled SNP alignment: {absent}")
-    expected_pairs = len(positions) * (len(positions) - 1) // 2
-    print(f"[input] {case_dir}: {len(positions)} loci, {expected_pairs} pairs")
-
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=output.name + ".tmp.", dir=output.parent))
     try:
         binary_alignment = temporary / "all_snps.binary_ac.fa"
-        binary_samples, binary_loci = write_binary_fasta(
-            case_dir / "all_snps.fa", case_dir / "all_snps.positions.tsv", binary_alignment
+        eligible_loci = temporary / "eligible_loci.tsv"
+        binary_samples, input_loci, binary_loci = write_maf_filtered_binary_fasta(
+            case_dir / "all_snps.fa", case_dir / "all_snps.positions.tsv",
+            binary_alignment, eligible_loci, min_maf,
         )
-        if binary_loci != len(positions):
-            raise ValueError("binary and position-map locus counts disagree")
+        with eligible_loci.open(encoding="utf-8", newline="") as handle:
+            positions = [int(row["slim_position"]) for row in csv.DictReader(handle, delimiter="\t")]
+        expected_pairs = binary_loci * (binary_loci - 1) // 2
+        print(f"[input] {case_dir}: {input_loci} input loci, {binary_loci} pass MAF >= {min_maf}, {expected_pairs} pairs")
         command = [
             executable, "--verbose", f"--threads={threads}", "--no-aracne",
             "--mi-threshold=0", "--no-filter-alignment",
@@ -194,13 +202,15 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
             raise RuntimeError(f"expected one edges file, found {len(edges)}")
         metadata = compress_and_summarize(
             edges[0], temporary / "spydrpick.edges.gz", temporary / "truth_pairs.tsv",
-            positions, truth, len(positions),
+            positions, truth, len(positions), set(all_positions),
         )
         edges[0].unlink()
         metadata.update({
             "case_dir": str(case_dir), "command": command,
             "sample_reweighting": "off" if unweighted else "SpydrPick default",
             "aracne": False, "mi_threshold": 0,
+            "min_maf": min_maf, "input_loci": input_loci,
+            "eligible_loci": binary_loci,
             "locus_representation": "binary_reference_vs_any_nonreference_A_C",
             "binary_samples": binary_samples,
             "edge_schema": "zero-based alignment columns; physical distance in bp; ARACNE flag; MI",
@@ -226,10 +236,13 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--unweighted", action="store_true")
+    parser.add_argument("--min-maf", type=float, default=0.05)
     args = parser.parse_args()
     if args.threads < 1:
         parser.error("--threads must be at least one")
-    run_case(args.case_dir, args.spydrpick, args.threads, args.force, args.unweighted)
+    if not 0.0 <= args.min_maf <= 0.5:
+        parser.error("--min-maf must be between zero and 0.5")
+    run_case(args.case_dir, args.spydrpick, args.threads, args.force, args.unweighted, args.min_maf)
 
 
 if __name__ == "__main__":

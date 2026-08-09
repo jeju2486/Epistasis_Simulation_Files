@@ -50,7 +50,8 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 - two internal clades: 5,000 each;
 - four terminal populations: 2,500 each;
 - 250 sampled genomes per terminal population (`n=1,000`);
-- 100 kb haploid nucleotide genome;
+- 50 kb haploid nucleotide genome;
+- nucleotide mutation rate `2e-8` per site per generation;
 - 500 bp mean HGT tract;
 - within-lineage HGT probability 0.02 per offspring;
 - 1,000 experimental generations;
@@ -66,7 +67,7 @@ mutations subject to predeclared criteria:
 
 - global derived-state frequency 0.30-0.70;
 - frequency 0.20-0.80 in every terminal population;
-- minimum physical separation 10 kb (20 times the mean HGT tract).
+- minimum physical separation 5 kb (10 times the mean HGT tract).
 
 Initial pairwise `r^2` is recorded for all six A-D pairs but is deliberately not used
 for selection. Screening truth loci on observed LD would condition the benchmark on
@@ -99,7 +100,7 @@ python scripts/build_manifest.py --config config/pilot.toml
 This creates:
 
 ```text
-inputs/reference.fa
+inputs/reference_50kb.fa
 manifests/checkpoints.tsv
 manifests/cases.tsv
 ```
@@ -202,9 +203,10 @@ JOBS=2 THREADS_PER_CASE=4 bash scripts/run_spydrpick_all.sh
 ```
 
 This example runs two cases concurrently and gives each SpydrPick process four
-threads, for at most eight compute threads. The runner uses `--mi-threshold=0`,
-`--no-aracne`, and `--no-filter-alignment`, and verifies that the output contains
-exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
+threads, for at most eight compute threads. Before pair construction, the shared
+binary matrix is filtered at `MAF >= 0.05`. The runner then uses `--mi-threshold=0`,
+`--no-aracne`, and `--no-filter-alignment` on that already-filtered matrix and
+verifies that the output contains exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
 primary comparison. SpydrPick and KOVAR receive the exact same binary A/C matrix:
 reference state is absence and any non-reference state is presence. Because the
 packaged SpydrPick 1.2.0 executable does not support
@@ -228,7 +230,8 @@ to `results/spydrpick_all_pairs/`. Each case also has `mi_rank_curve.png`, with 
 and C-D highlighted. The heatmap bins the genome for display but every pair
 contributes; it is not a top-N visualization. If a selected locus is lost or
 fixed before sampling, its truth pair is retained with `candidate_status=locus_absent`
-rather than being misreported as a statistical failure.
+rather than being misreported as a statistical failure. A sampled truth locus below
+the predeclared 5% MAF threshold is recorded separately as `maf_filtered`.
 
 ## KOVAR 0.8.1 analysis
 

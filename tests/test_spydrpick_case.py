@@ -65,6 +65,19 @@ class SpydrPickSummaryTests(unittest.TestCase):
             self.assertEqual(rows[0]["candidate_status"], "locus_absent")
             self.assertEqual(rows[1]["candidate_status"], "eligible")
 
+    def test_maf_filtered_truth_locus_is_distinguished(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.edges"
+            raw.write_text("1 2 1 1 0.9\n", encoding="utf-8")
+            compress_and_summarize(
+                raw, root / "edges.gz", root / "truth.tsv", [10, 20],
+                {"A": 10, "B": 30, "C": 10, "D": 20}, 2, {10, 20, 30},
+            )
+            with (root / "truth.tsv").open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(rows[0]["candidate_status"], "maf_filtered")
+
 
 if __name__ == "__main__":
     unittest.main()

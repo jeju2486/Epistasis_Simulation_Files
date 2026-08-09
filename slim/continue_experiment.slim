@@ -7,15 +7,15 @@ initialize() {
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
     initializeTreeSeq();
 
-    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference.fa");
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_50kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
     if (!exists("TREE_OUT")) defineConstant("TREE_OUT", "out.trees");
     if (!exists("VCF_OUT")) defineConstant("VCF_OUT", "out.vcf");
     if (!exists("SAMPLE_FILE")) defineConstant("SAMPLE_FILE", "sample_names.tsv");
     if (!exists("MONITOR_FILE")) defineConstant("MONITOR_FILE", "monitor.tsv");
 
-    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
-    if (!exists("MU")) defineConstant("MU", 2e-7);
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 50000);
+    if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
     if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);

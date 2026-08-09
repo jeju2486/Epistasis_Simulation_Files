@@ -65,6 +65,67 @@ def write_binary_fasta(alignment: Path, positions: Path, output: Path) -> tuple[
     return len(records), expected_length
 
 
+def write_maf_filtered_binary_fasta(
+    alignment: Path,
+    positions: Path,
+    output: Path,
+    mapping_output: Path,
+    min_maf: float = 0.05,
+) -> tuple[int, int, int]:
+    """Write a binary matrix after a predeclared marginal-frequency filter."""
+    if not 0.0 <= min_maf <= 0.5:
+        raise ValueError("min_maf must be between zero and 0.5")
+    records = read_fasta(alignment)
+    references = reference_states(positions)
+    expected_length = len(references)
+    binary_records: list[tuple[str, str]] = []
+    presence_counts = [0] * expected_length
+    for name, sequence in records:
+        if len(sequence) != expected_length:
+            raise ValueError(f"alignment length mismatch for {name}")
+        invalid = set(sequence) - set("ACGT")
+        if invalid:
+            raise ValueError(f"unsupported states for {name}: {sorted(invalid)}")
+        binary = "".join(
+            "A" if observed == reference else "C"
+            for observed, reference in zip(sequence, references, strict=True)
+        )
+        for column, state in enumerate(binary):
+            presence_counts[column] += state == "C"
+        binary_records.append((name, binary))
+
+    n_samples = len(binary_records)
+    prevalence = [count / n_samples for count in presence_counts]
+    maf = [min(value, 1.0 - value) for value in prevalence]
+    retained = [column for column, value in enumerate(maf) if value >= min_maf]
+    if len(retained) < 2:
+        raise ValueError(f"fewer than two loci pass min_maf={min_maf}")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="\n") as handle:
+        for name, binary in binary_records:
+            filtered = "".join(binary[column] for column in retained)
+            handle.write(f">{name}\n")
+            for start in range(0, len(filtered), 80):
+                handle.write(filtered[start : start + 80] + "\n")
+
+    with positions.open(encoding="utf-8", newline="") as handle:
+        position_rows = list(csv.DictReader(handle, delimiter="\t"))
+    fields = ["filtered_column", "original_column", "slim_position", "prevalence", "maf"]
+    with mapping_output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
+        writer.writeheader()
+        for filtered_column, original_column in enumerate(retained):
+            writer.writerow({
+                "filtered_column": filtered_column,
+                "original_column": original_column,
+                "slim_position": int(position_rows[original_column]["vcf_position"]) - 1,
+                "prevalence": prevalence[original_column],
+                "maf": maf[original_column],
+            })
+    return n_samples, expected_length, len(retained)
+
+
 def materialize_pairs(source: Path, output: Path, max_pairs: int = 0) -> int:
     if max_pairs < 0:
         raise ValueError("max_pairs must be non-negative")
