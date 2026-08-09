@@ -49,7 +49,7 @@ initialize() {
 
 function (integer$) targetSize(o<Subpopulation>$ pop) {
     if (pop.name == "p0") return N_ANCESTRAL;
-    if ((pop.name == "pL") | (pop.name == "pR")) return N_CLADE;
+    if ((pop.name == "p5") | (pop.name == "p6")) return N_CLADE;
     return N_TERMINAL;
 }
 
@@ -201,12 +201,14 @@ early() {
 }
 
 DEEP_SPLIT_TICK late() {
-    sim.addSubpop("pL", 0, haploid=T);
-    sim.addSubpop("pR", 0, haploid=T);
+    // SLiM requires subpopulation names to be p followed by an integer.
+    // p5 and p6 are the temporary left/right ancestral clades.
+    sim.addSubpop("p5", 0, haploid=T);
+    sim.addSubpop("p6", 0, haploid=T);
 
     shuffled = sample(p0.individuals, p0.individualCount);
-    pL.takeMigrants(shuffled[0:(N_CLADE - 1)]);
-    pR.takeMigrants(shuffled[N_CLADE:(2 * N_CLADE - 1)]);
+    p5.takeMigrants(shuffled[0:(N_CLADE - 1)]);
+    p6.takeMigrants(shuffled[N_CLADE:(2 * N_CLADE - 1)]);
     p0.removeSubpopulation();
 }
 
@@ -216,16 +218,16 @@ TERMINAL_SPLIT_TICK late() {
     sim.addSubpop("p3", 0, haploid=T);
     sim.addSubpop("p4", 0, haploid=T);
 
-    left = sample(pL.individuals, pL.individualCount);
-    right = sample(pR.individuals, pR.individualCount);
+    left = sample(p5.individuals, p5.individualCount);
+    right = sample(p6.individuals, p6.individualCount);
 
     p1.takeMigrants(left[0:(N_TERMINAL - 1)]);
     p2.takeMigrants(left[N_TERMINAL:(2 * N_TERMINAL - 1)]);
     p3.takeMigrants(right[0:(N_TERMINAL - 1)]);
     p4.takeMigrants(right[N_TERMINAL:(2 * N_TERMINAL - 1)]);
 
-    pL.removeSubpopulation();
-    pR.removeSubpopulation();
+    p5.removeSubpopulation();
+    p6.removeSubpopulation();
 }
 
 CHECKPOINT_TICK late() {
