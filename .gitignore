@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Generated simulation material
+inputs/reference.fa
+manifests/*.tsv
+runs/
+checkpoints/
+summaries/
+
+# SLiM / phylogeny outputs
+*.trees
+*.vcf
+*.slimbin
+*.log
+*.fa
+*.fasta
+*.treefile
+*.iqtree
+*.ckp.gz
+*.mldist
+*.model.gz
+
+!.github/
+!tests/fixtures/*.fa

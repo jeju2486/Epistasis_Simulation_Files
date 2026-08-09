@@ -1,0 +1,236 @@
+// Build a neutral four-lineage bacterial population and select four common,
+// unlinked standing variants A-D. Target: SLiM 5.2.
+
+initialize() {
+    initializeSLiMModelType("nonWF");
+    initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
+    initializeTreeSeq();
+
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference.fa");
+    if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
+    if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
+    if (!exists("METRICS_FILE")) defineConstant("METRICS_FILE", "checkpoint_metrics.tsv");
+
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
+    if (!exists("MU")) defineConstant("MU", 2e-7);
+    if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
+    if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
+
+    if (!exists("N_ANCESTRAL")) defineConstant("N_ANCESTRAL", 10000);
+    if (!exists("N_CLADE")) defineConstant("N_CLADE", 5000);
+    if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
+    if (!exists("ANCESTRAL_GENERATIONS")) defineConstant("ANCESTRAL_GENERATIONS", 5000);
+    if (!exists("DEEP_GENERATIONS")) defineConstant("DEEP_GENERATIONS", 1000);
+    if (!exists("TERMINAL_GENERATIONS")) defineConstant("TERMINAL_GENERATIONS", 1000);
+
+    if (!exists("GLOBAL_FREQ_MIN")) defineConstant("GLOBAL_FREQ_MIN", 0.30);
+    if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.70);
+    if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.20);
+    if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.80);
+    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 20000);
+    if (!exists("MAX_INITIAL_R2")) defineConstant("MAX_INITIAL_R2", 0.02);
+
+    defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
+    defineConstant("TERMINAL_SPLIT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);
+    defineConstant("CHECKPOINT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS + TERMINAL_GENERATIONS);
+
+    defineConstant("L", initializeAncestralNucleotides(REF_FILE));
+    if (L != GENOME_LENGTH)
+        stop("Reference length does not equal GENOME_LENGTH.");
+
+    initializeMutationTypeNuc("m1", 1.0, "f", 0.0);
+    m1.convertToSubstitution = F;
+    initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(MU));
+    initializeGenomicElement(g1, 0, L - 1);
+
+    // All homologous exchange is implemented explicitly as HGT tracts.
+    initializeRecombinationRate(0.0);
+}
+
+function (integer$) targetSize(o<Subpopulation>$ pop) {
+    if (pop.name == "p0") return N_ANCESTRAL;
+    if ((pop.name == "pL") | (pop.name == "pR")) return N_CLADE;
+    return N_TERMINAL;
+}
+
+function (object<Mutation>) chooseStandingLoci(void) {
+    muts = sim.mutationsOfType(m1);
+    if (size(muts) < 4)
+        stop("Fewer than four segregating mutations exist at checkpoint.");
+
+    fg = sim.mutationFrequencies(NULL, muts);
+    f1 = sim.mutationFrequencies(p1, muts);
+    f2 = sim.mutationFrequencies(p2, muts);
+    f3 = sim.mutationFrequencies(p3, muts);
+    f4 = sim.mutationFrequencies(p4, muts);
+
+    keep = (fg >= GLOBAL_FREQ_MIN) & (fg <= GLOBAL_FREQ_MAX) &
+           (f1 >= LINEAGE_FREQ_MIN) & (f1 <= LINEAGE_FREQ_MAX) &
+           (f2 >= LINEAGE_FREQ_MIN) & (f2 <= LINEAGE_FREQ_MAX) &
+           (f3 >= LINEAGE_FREQ_MIN) & (f3 <= LINEAGE_FREQ_MAX) &
+           (f4 >= LINEAGE_FREQ_MIN) & (f4 <= LINEAGE_FREQ_MAX);
+
+    candidates = muts[keep];
+    if (size(candidates) < 4)
+        stop("Fewer than four mutations pass the standing-variation frequency criteria.");
+
+    allHaplosomes = sim.subpopulations.haplosomes;
+    chosen = NULL;
+
+    // Repeat the randomized greedy search so a poor first ordering does not
+    // cause a false checkpoint failure when a valid quartet exists.
+    for (attempt in 1:100) {
+        chosen = NULL;
+        shuffled = sample(candidates, size(candidates));
+
+        for (candidate in shuffled) {
+            acceptable = T;
+
+            if (!isNULL(chosen)) {
+                for (existing in chosen) {
+                    if (abs(candidate.position - existing.position) < MIN_DISTANCE) {
+                        acceptable = F;
+                        break;
+                    }
+
+                    r2 = calcLD_Rsquared(candidate, existing, haplosomes=allHaplosomes);
+                    if (isNAN(r2) | (r2 > MAX_INITIAL_R2)) {
+                        acceptable = F;
+                        break;
+                    }
+                }
+            }
+
+            if (acceptable) {
+                if (isNULL(chosen))
+                    chosen = candidate;
+                else
+                    chosen = c(chosen, candidate);
+            }
+
+            if (!isNULL(chosen) & (size(chosen) == 4))
+                break;
+        }
+
+        if (!isNULL(chosen) & (size(chosen) == 4))
+            break;
+    }
+
+    if (isNULL(chosen) | (size(chosen) != 4))
+        stop("No quartet passes the distance and initial-LD criteria.");
+
+    return chosen[order(chosen.position)];
+}
+
+function (void) writeCheckpointMetrics(object<Mutation> loci) {
+    labels = c("A", "B", "C", "D");
+    fg = sim.mutationFrequencies(NULL, loci);
+    f1 = sim.mutationFrequencies(p1, loci);
+    f2 = sim.mutationFrequencies(p2, loci);
+    f3 = sim.mutationFrequencies(p3, loci);
+    f4 = sim.mutationFrequencies(p4, loci);
+
+    header = "label\tmutation_id\tposition\tglobal_frequency\tp1_frequency\tp2_frequency\tp3_frequency\tp4_frequency\n";
+    writeFile(LOCI_FILE, header, append=F);
+
+    for (i in 0:3) {
+        line = labels[i] + "\t" + loci[i].id + "\t" + loci[i].position + "\t" +
+               fg[i] + "\t" + f1[i] + "\t" + f2[i] + "\t" + f3[i] + "\t" + f4[i] + "\n";
+        writeFile(LOCI_FILE, line, append=T);
+    }
+
+    metrics = "metric\tvalue\n" +
+              "tick\t" + community.tick + "\n" +
+              "p1_size\t" + p1.individualCount + "\n" +
+              "p2_size\t" + p2.individualCount + "\n" +
+              "p3_size\t" + p3.individualCount + "\n" +
+              "p4_size\t" + p4.individualCount + "\n" +
+              "candidate_count\t" + size(sim.mutationsOfType(m1)) + "\n";
+
+    for (i in 0:2) {
+        for (j in (i + 1):3) {
+            distance = abs(loci[i].position - loci[j].position);
+            r2 = calcLD_Rsquared(loci[i], loci[j], haplosomes=sim.subpopulations.haplosomes);
+            metrics = metrics + "distance_" + labels[i] + labels[j] + "\t" + distance + "\n" +
+                      "r2_" + labels[i] + labels[j] + "\t" + r2 + "\n";
+        }
+    }
+
+    writeFile(METRICS_FILE, metrics, append=F);
+}
+
+// Two offspring per adult provide room for viability regulation. Adults are
+// removed in early(), producing non-overlapping haploid generations.
+reproduction() {
+    for (rep in 0:1) {
+        if ((runif(1) < HGT_P_WITHIN) & (subpop.individualCount > 1)) {
+            donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
+            start = rdunif(1, 0, L - 1);
+            tract = asInteger(max(1, rgeom(1, 1.0 / TRACT_LENGTH)));
+            end = min(L - 1, start + tract - 1);
+            subpop.addRecombinant(individual.haplosomes[0], donor, c(start, end),
+                NULL, NULL, NULL, randomizeStrands=F);
+        }
+        else
+            subpop.addCloned(individual);
+    }
+}
+
+1 early() {
+    if ((HGT_P_WITHIN < 0.0) | (HGT_P_WITHIN > 1.0))
+        stop("HGT_P_WITHIN must be between zero and one.");
+    sim.addSubpop("p0", N_ANCESTRAL, haploid=T);
+}
+
+early() {
+    if (community.tick == 1)
+        return;
+
+    for (pop in sim.subpopulations) {
+        adults = pop.individuals[pop.individuals.age > 0];
+        if (size(adults) > 0)
+            adults.fitnessScaling = 0.0;
+
+        juveniles = pop.individuals[pop.individuals.age == 0];
+        if (size(juveniles) == 0)
+            next;
+
+        scale = targetSize(pop) / size(juveniles);
+        juveniles.fitnessScaling = min(1.0, scale);
+    }
+}
+
+DEEP_SPLIT_TICK late() {
+    sim.addSubpop("pL", 0, haploid=T);
+    sim.addSubpop("pR", 0, haploid=T);
+
+    shuffled = sample(p0.individuals, p0.individualCount);
+    pL.takeMigrants(shuffled[0:(N_CLADE - 1)]);
+    pR.takeMigrants(shuffled[N_CLADE:(2 * N_CLADE - 1)]);
+    p0.removeSubpopulation();
+}
+
+TERMINAL_SPLIT_TICK late() {
+    sim.addSubpop("p1", 0, haploid=T);
+    sim.addSubpop("p2", 0, haploid=T);
+    sim.addSubpop("p3", 0, haploid=T);
+    sim.addSubpop("p4", 0, haploid=T);
+
+    left = sample(pL.individuals, pL.individualCount);
+    right = sample(pR.individuals, pR.individualCount);
+
+    p1.takeMigrants(left[0:(N_TERMINAL - 1)]);
+    p2.takeMigrants(left[N_TERMINAL:(2 * N_TERMINAL - 1)]);
+    p3.takeMigrants(right[0:(N_TERMINAL - 1)]);
+    p4.takeMigrants(right[N_TERMINAL:(2 * N_TERMINAL - 1)]);
+
+    pL.removeSubpopulation();
+    pR.removeSubpopulation();
+}
+
+CHECKPOINT_TICK late() {
+    loci = chooseStandingLoci();
+    writeCheckpointMetrics(loci);
+    sim.treeSeqOutput(CHECKPOINT_FILE);
+    sim.simulationFinished();
+}

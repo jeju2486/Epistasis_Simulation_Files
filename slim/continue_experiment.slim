@@ -1,0 +1,203 @@
+// Continue a saved four-lineage checkpoint through Mode 0 (OFF) or Mode 1
+// (A-B interaction ON; independent clade-aligned C and D main effects ON).
+// Target: SLiM 5.2.
+
+initialize() {
+    initializeSLiMModelType("nonWF");
+    initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
+    initializeTreeSeq();
+
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference.fa");
+    if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
+    if (!exists("TREE_OUT")) defineConstant("TREE_OUT", "out.trees");
+    if (!exists("VCF_OUT")) defineConstant("VCF_OUT", "out.vcf");
+    if (!exists("SAMPLE_FILE")) defineConstant("SAMPLE_FILE", "sample_names.tsv");
+    if (!exists("MONITOR_FILE")) defineConstant("MONITOR_FILE", "monitor.tsv");
+
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
+    if (!exists("MU")) defineConstant("MU", 2e-7);
+    if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
+    if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
+    if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);
+    if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
+    if (!exists("SAMPLE_PER_TERMINAL")) defineConstant("SAMPLE_PER_TERMINAL", 250);
+    if (!exists("EXPERIMENT_GENERATIONS")) defineConstant("EXPERIMENT_GENERATIONS", 1000);
+    if (!exists("MONITOR_EVERY")) defineConstant("MONITOR_EVERY", 50);
+
+    if (!exists("MODE")) defineConstant("MODE", 0);
+    if (!exists("S_AB")) defineConstant("S_AB", 0.001);
+    if (!exists("S_CD")) defineConstant("S_CD", 0.0015);
+
+    if (!exists("A_ID")) defineConstant("A_ID", -1);
+    if (!exists("B_ID")) defineConstant("B_ID", -1);
+    if (!exists("C_ID")) defineConstant("C_ID", -1);
+    if (!exists("D_ID")) defineConstant("D_ID", -1);
+
+    defineConstant("L", initializeAncestralNucleotides(REF_FILE));
+    if (L != GENOME_LENGTH)
+        stop("Reference length does not equal GENOME_LENGTH.");
+
+    initializeMutationTypeNuc("m1", 1.0, "f", 0.0);
+    m1.convertToSubstitution = F;
+    initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(MU));
+    initializeGenomicElement(g1, 0, L - 1);
+    initializeRecombinationRate(0.0);
+}
+
+function (logical$) hasMutation(o<Individual>$ ind, integer$ mutationID) {
+    ids = ind.haplosomes[0].mutations.id;
+    return any(ids == mutationID);
+}
+
+function (float$) experimentalLogFitness(o<Individual>$ ind, o<Subpopulation>$ pop) {
+    if (MODE == 0)
+        return 0.0;
+
+    hasA = hasMutation(ind, A_ID);
+    hasB = hasMutation(ind, B_ID);
+    hasC = hasMutation(ind, C_ID);
+    hasD = hasMutation(ind, D_ID);
+
+    lf = 0.0;
+    if (hasA != hasB)
+        lf = lf - S_AB;
+
+    lineageSign = -1.0;
+    if ((pop.name == "p1") | (pop.name == "p2"))
+        lineageSign = 1.0;
+
+    lf = lf + lineageSign * S_CD * (asInteger(hasC) + asInteger(hasD));
+    return lf;
+}
+
+function (integer) pairCounts(o<Subpopulation>$ pop, integer$ firstID, integer$ secondID) {
+    counts = integer(4);
+    for (ind in pop.individuals) {
+        first = hasMutation(ind, firstID);
+        second = hasMutation(ind, secondID);
+        state = 0;
+        if (first) state = state + 2;
+        if (second) state = state + 1;
+        counts[state] = counts[state] + 1;
+    }
+    return counts;
+}
+
+function (void) writeMonitor(void) {
+    if (!asLogical(sim.getValue("monitor_header"))) {
+        header = "tick\tmode\tcross_hgt_probability\tpopulation\tn\tAB_00\tAB_01\tAB_10\tAB_11\tCD_00\tCD_01\tCD_10\tCD_11\n";
+        writeFile(MONITOR_FILE, header, append=F);
+        sim.setValue("monitor_header", T);
+    }
+
+    for (pop in sim.subpopulations) {
+        ab = pairCounts(pop, A_ID, B_ID);
+        cd = pairCounts(pop, C_ID, D_ID);
+        line = community.tick + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" + pop.name + "\t" +
+               pop.individualCount + "\t" + ab[0] + "\t" + ab[1] + "\t" + ab[2] + "\t" + ab[3] + "\t" +
+               cd[0] + "\t" + cd[1] + "\t" + cd[2] + "\t" + cd[3] + "\n";
+        writeFile(MONITOR_FILE, line, append=T);
+    }
+}
+
+function (void) finishRun(void) {
+    sampled = NULL;
+    for (pop in sim.subpopulations) {
+        n = min(SAMPLE_PER_TERMINAL, pop.individualCount);
+        draw = pop.sampleIndividuals(n);
+        if (isNULL(sampled)) sampled = draw;
+        else sampled = c(sampled, draw);
+    }
+
+    writeFile(SAMPLE_FILE, "vcf_label\tanalysis_label\tpopulation\tpedigree_id\tindividual_index\n", append=F);
+    for (ind in sampled) {
+        vcfLabel = "p" + ind.subpopulation.id + ":i" + ind.index;
+        analysisLabel = "p" + ind.subpopulation.id + "_i" + ind.index;
+        line = vcfLabel + "\t" + analysisLabel + "\t" + ind.subpopulation.name + "\t" + ind.pedigreeID + "\t" + ind.index + "\n";
+        writeFile(SAMPLE_FILE, line, append=T);
+    }
+
+    sim.treeSeqRememberIndividuals(sampled);
+    sim.treeSeqOutput(TREE_OUT);
+    sampled.outputIndividualsToVCF(filePath=VCF_OUT, simplifyNucleotides=T);
+    sim.simulationFinished();
+}
+
+reproduction() {
+    for (rep in 0:1) {
+        u = runif(1);
+        donor = NULL;
+
+        if (u < HGT_P_CROSS) {
+            otherPops = sim.subpopulations[sim.subpopulations != subpop];
+            if (size(otherPops) > 0)
+                donor = sample(otherPops.individuals, 1).haplosomes[0];
+        }
+        else if ((u < (HGT_P_CROSS + HGT_P_WITHIN)) & (subpop.individualCount > 1))
+            donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
+
+        if (isNULL(donor))
+            subpop.addCloned(individual);
+        else {
+            start = rdunif(1, 0, L - 1);
+            tract = asInteger(max(1, rgeom(1, 1.0 / TRACT_LENGTH)));
+            end = min(L - 1, start + tract - 1);
+            subpop.addRecombinant(individual.haplosomes[0], donor, c(start, end),
+                NULL, NULL, NULL, randomizeStrands=F);
+        }
+    }
+}
+
+1 early() {
+    if (!((MODE == 0) | (MODE == 1)))
+        stop("MODE must be 0 or 1.");
+    if ((HGT_P_CROSS < 0.0) | (HGT_P_WITHIN < 0.0) |
+        ((HGT_P_CROSS + HGT_P_WITHIN) > 1.0))
+        stop("HGT probabilities must be non-negative and sum to at most one.");
+    if (any(c(A_ID, B_ID, C_ID, D_ID) < 0))
+        stop("A_ID, B_ID, C_ID and D_ID must be supplied.");
+
+    sim.readFromPopulationFile(CHECKPOINT_FILE);
+    if (size(sim.subpopulations) != 4)
+        stop("Checkpoint must contain exactly four terminal populations.");
+
+    sim.setValue("loaded", T);
+    sim.setValue("start_tick", community.tick);
+    sim.setValue("end_tick", community.tick + EXPERIMENT_GENERATIONS);
+    sim.setValue("monitor_header", F);
+    writeMonitor();
+}
+
+early() {
+    if (isNULL(sim.getValue("loaded")))
+        return;
+
+    for (pop in sim.subpopulations) {
+        adults = pop.individuals[pop.individuals.age > 0];
+        if (size(adults) > 0)
+            adults.fitnessScaling = 0.0;
+
+        juveniles = pop.individuals[pop.individuals.age == 0];
+        if (size(juveniles) == 0)
+            next;
+
+        weights = float(size(juveniles));
+        for (i in seqAlong(juveniles))
+            weights[i] = exp(experimentalLogFitness(juveniles[i], pop));
+
+        scale = N_TERMINAL / sum(weights);
+        juveniles.fitnessScaling = pmin(1.0, weights * scale);
+    }
+}
+
+late() {
+    if (isNULL(sim.getValue("loaded")))
+        return;
+
+    elapsed = community.tick - asInteger(sim.getValue("start_tick"));
+    if ((elapsed > 0) & (integerMod(elapsed, MONITOR_EVERY) == 0))
+        writeMonitor();
+
+    if (community.tick >= asInteger(sim.getValue("end_tick")))
+        finishRun();
+}

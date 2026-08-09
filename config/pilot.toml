@@ -1,0 +1,45 @@
+[paths]
+reference = "inputs/reference.fa"
+checkpoint_root = "checkpoints"
+run_root = "runs"
+manifest_root = "manifests"
+
+[design]
+replicates = 50
+modes = [0, 1]
+cross_hgt_probabilities = [0.0, 0.002, 0.02]
+master_seed = 20260809
+
+[genome]
+length = 100000
+reference_seed = 2486
+mutation_rate = 2e-7
+mean_hgt_tract = 500
+within_hgt_probability = 0.02
+
+[population]
+ancestral_size = 10000
+clade_size = 5000
+terminal_size = 2500
+sample_per_terminal = 250
+ancestral_generations = 5000
+deep_clade_generations = 1000
+terminal_generations = 1000
+
+[loci]
+global_frequency_min = 0.30
+global_frequency_max = 0.70
+lineage_frequency_min = 0.20
+lineage_frequency_max = 0.80
+minimum_distance = 20000
+maximum_initial_r2 = 0.02
+
+[experiment]
+generations = 1000
+s_ab = 0.001
+s_cd = 0.0015
+monitor_every = 50
+
+[postprocess]
+ancestral_ne = 10000
+oracle_tree_position = 50000
