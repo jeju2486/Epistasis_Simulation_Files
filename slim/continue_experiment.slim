@@ -148,7 +148,7 @@ reproduction() {
     }
 }
 
-1 early() {
+s1 1 early() {
     if (!((MODE == 0) | (MODE == 1)))
         stop("MODE must be 0 or 1.");
     if ((HGT_P_CROSS < 0.0) | (HGT_P_WITHIN < 0.0) |
@@ -165,10 +165,14 @@ reproduction() {
     sim.setValue("start_tick", community.tick);
     sim.setValue("end_tick", community.tick + EXPERIMENT_GENERATIONS);
     sim.setValue("monitor_header", F);
+    community.rescheduleScriptBlock(s2, start=community.tick + 1,
+        end=community.tick + EXPERIMENT_GENERATIONS);
+    community.rescheduleScriptBlock(s3, start=community.tick + 1,
+        end=community.tick + EXPERIMENT_GENERATIONS);
     writeMonitor();
 }
 
-early() {
+s2 2 early() {
     if (isNULL(sim.getValue("loaded")))
         return;
 
@@ -190,7 +194,7 @@ early() {
     }
 }
 
-late() {
+s3 2 late() {
     if (isNULL(sim.getValue("loaded")))
         return;
 
