@@ -72,6 +72,10 @@ cleanup() {
     failed="${OUTDIR}.failed.$(date -u +%Y%m%dT%H%M%SZ)"
     mv "$TMPDIR_RUN" "$failed"
     echo "[failed] retained attempt at $failed" >&2
+    if [[ -s "$failed/slim.log" ]]; then
+      echo "[failed] SLiM log follows:" >&2
+      sed 's/^/[slim] /' "$failed/slim.log" >&2
+    fi
   fi
 }
 trap cleanup EXIT
