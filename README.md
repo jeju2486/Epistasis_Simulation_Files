@@ -196,7 +196,7 @@ than mistaken for phylogenetic or epistatic effects.
 Install the updated environment, then run every completed case and make the plots:
 
 ```bash
-micromamba update -n epistasis-sim -f environment.yml
+micromamba env update -n epistasis-sim -f environment.yml
 micromamba activate epistasis-sim
 JOBS=2 THREADS_PER_CASE=4 bash scripts/run_spydrpick_all.sh
 ```
