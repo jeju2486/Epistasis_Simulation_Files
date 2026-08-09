@@ -9,4 +9,6 @@ dependencies:
   - pyslim>=1.0
   - tskit>=0.6
   - iqtree>=2.3
+  - spydrpick=1.2.0
+  - matplotlib>=3.8
   - shellcheck

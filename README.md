@@ -193,6 +193,38 @@ pair, omit ARACNE, and supply the same pair universe to KOVAR in both directions
 Physical distance is retained so that short-range LD peaks can be classified rather
 than mistaken for phylogenetic or epistatic effects.
 
+Install the updated environment, then run every completed case and make the plots:
+
+```bash
+micromamba update -n epistasis-sim -f environment.yml
+micromamba activate epistasis-sim
+JOBS=2 THREADS_PER_CASE=4 bash scripts/run_spydrpick_all.sh
+```
+
+This example runs two cases concurrently and gives each SpydrPick process four
+threads, for at most eight compute threads. The runner uses `--mi-threshold=0`,
+`--no-aracne`, and `--no-filter-alignment`, and verifies that the output contains
+exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
+primary comparison. The optional unweighted sensitivity analysis is:
+
+```bash
+python scripts/run_spydrpick_manifest.py \
+  --manifest manifests/cases.tsv \
+  --jobs 2 \
+  --threads-per-case 4 \
+  --unweighted
+python scripts/plot_spydrpick.py --manifest manifests/cases.tsv --unweighted
+```
+
+Each case receives `spydrpick_all_pairs/spydrpick.edges.gz`, a small
+`truth_pairs.tsv` with the MI and all-pair ranks of A-B and C-D, the exact command
+metadata, log, and `all_pair_mi_heatmap.png`. Aggregate truth-pair ranks are written
+to `results/spydrpick_all_pairs/`. Each case also has `mi_rank_curve.png`, with A-B
+and C-D highlighted. The heatmap bins the genome for display but every pair
+contributes; it is not a top-N visualization. If a selected locus is lost or
+fixed before sampling, its truth pair is retained with `candidate_status=locus_absent`
+rather than being misreported as a statistical failure.
+
 ## Cross-lineage HGT sensitivity
 
 All checkpoints are built with zero cross-lineage HGT. Values 0, 0.002 and 0.02 are
