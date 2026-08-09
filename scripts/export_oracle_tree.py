@@ -47,12 +47,17 @@ def export(
         pedigree_id = metadata.get("pedigree_id")
         if pedigree_id not in labels_by_pedigree:
             continue
-        non_null_nodes = [node for node in individual.nodes if node != tskit.NULL]
-        if len(non_null_nodes) != 1:
+        non_vacant_nodes = [
+            node_id
+            for node_id in individual.nodes
+            if node_id != tskit.NULL and not pyslim.node_is_vacant(ts, ts.node(node_id))
+        ]
+        if len(non_vacant_nodes) != 1:
             raise ValueError(
-                f"Expected one haploid node for pedigree {pedigree_id}, found {len(non_null_nodes)}"
+                f"Expected one non-vacant haploid node for pedigree {pedigree_id}, "
+                f"found {len(non_vacant_nodes)}"
             )
-        node = non_null_nodes[0]
+        node = non_vacant_nodes[0]
         old_nodes.append(node)
         old_labels[node] = labels_by_pedigree[pedigree_id]
 
