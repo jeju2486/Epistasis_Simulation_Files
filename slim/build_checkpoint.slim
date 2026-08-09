@@ -207,8 +207,9 @@ DEEP_SPLIT_TICK late() {
     sim.addSubpop("p6", 0, haploid=T);
 
     shuffled = sample(p0.individuals, p0.individualCount);
-    p5.takeMigrants(shuffled[0:(N_CLADE - 1)]);
-    p6.takeMigrants(shuffled[N_CLADE:(2 * N_CLADE - 1)]);
+    leftCount = asInteger(floor(size(shuffled) / 2));
+    p5.takeMigrants(shuffled[0:(leftCount - 1)]);
+    p6.takeMigrants(shuffled[leftCount:(size(shuffled) - 1)]);
     p0.removeSubpopulation();
 }
 
@@ -220,11 +221,13 @@ TERMINAL_SPLIT_TICK late() {
 
     left = sample(p5.individuals, p5.individualCount);
     right = sample(p6.individuals, p6.individualCount);
+    leftCount = asInteger(floor(size(left) / 2));
+    rightCount = asInteger(floor(size(right) / 2));
 
-    p1.takeMigrants(left[0:(N_TERMINAL - 1)]);
-    p2.takeMigrants(left[N_TERMINAL:(2 * N_TERMINAL - 1)]);
-    p3.takeMigrants(right[0:(N_TERMINAL - 1)]);
-    p4.takeMigrants(right[N_TERMINAL:(2 * N_TERMINAL - 1)]);
+    p1.takeMigrants(left[0:(leftCount - 1)]);
+    p2.takeMigrants(left[leftCount:(size(left) - 1)]);
+    p3.takeMigrants(right[0:(rightCount - 1)]);
+    p4.takeMigrants(right[rightCount:(size(right) - 1)]);
 
     p5.removeSubpopulation();
     p6.removeSubpopulation();
