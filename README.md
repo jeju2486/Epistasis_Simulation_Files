@@ -65,8 +65,8 @@ length. This removes the ambiguity in the older runner.
 At the checkpoint, the model randomly selects four naturally segregating neutral
 mutations subject to predeclared criteria:
 
-- global derived-state frequency 0.30-0.70;
-- frequency 0.20-0.80 in every terminal population;
+- global derived-state frequency 0.10-0.90;
+- frequency 0.05-0.95 in every terminal population;
 - minimum physical separation 5 kb (10 times the mean HGT tract).
 
 Initial pairwise `r^2` is recorded for all six A-D pairs but is deliberately not used

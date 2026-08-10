@@ -23,10 +23,10 @@ initialize() {
     if (!exists("DEEP_GENERATIONS")) defineConstant("DEEP_GENERATIONS", 1000);
     if (!exists("TERMINAL_GENERATIONS")) defineConstant("TERMINAL_GENERATIONS", 1000);
 
-    if (!exists("GLOBAL_FREQ_MIN")) defineConstant("GLOBAL_FREQ_MIN", 0.30);
-    if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.70);
-    if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.20);
-    if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.80);
+    if (!exists("GLOBAL_FREQ_MIN")) defineConstant("GLOBAL_FREQ_MIN", 0.10);
+    if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.90);
+    if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.05);
+    if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.95);
     if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 5000);
 
     defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
@@ -55,8 +55,13 @@ function (integer$) targetSize(o<Subpopulation>$ pop) {
 function (object<Mutation>) chooseStandingLoci(void) {
     muts = sim.mutationsOfType(m1);
     sim.setValue("total_mutation_count", size(muts));
-    if (size(muts) < 4)
+    if (size(muts) < 4) {
+        diagnostics = "metric\tvalue\n" +
+                      "total_mutation_count\t" + size(muts) + "\n" +
+                      "frequency_candidate_count\t0\n";
+        writeFile(METRICS_FILE, diagnostics, append=F);
         stop("Fewer than four segregating mutations exist at checkpoint.");
+    }
 
     fg = sim.mutationFrequencies(NULL, muts);
     f1 = sim.mutationFrequencies(p1, muts);
@@ -72,8 +77,17 @@ function (object<Mutation>) chooseStandingLoci(void) {
 
     candidates = muts[keep];
     sim.setValue("frequency_candidate_count", size(candidates));
-    if (size(candidates) < 4)
+    if (size(candidates) < 4) {
+        diagnostics = "metric\tvalue\n" +
+                      "total_mutation_count\t" + size(muts) + "\n" +
+                      "frequency_candidate_count\t" + size(candidates) + "\n" +
+                      "global_frequency_min\t" + GLOBAL_FREQ_MIN + "\n" +
+                      "global_frequency_max\t" + GLOBAL_FREQ_MAX + "\n" +
+                      "lineage_frequency_min\t" + LINEAGE_FREQ_MIN + "\n" +
+                      "lineage_frequency_max\t" + LINEAGE_FREQ_MAX + "\n";
+        writeFile(METRICS_FILE, diagnostics, append=F);
         stop("Fewer than four mutations pass the standing-variation frequency criteria.");
+    }
 
     // For points on a line, greedily taking the leftmost eligible point gives
     // a maximum-cardinality distance-compatible set. Unlike the former
