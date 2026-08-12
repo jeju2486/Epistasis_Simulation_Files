@@ -42,11 +42,10 @@ class ManifestTests(unittest.TestCase):
                 "terminal_generations": 4,
             },
             "loci": {
-                "global_frequency_min": 0.3,
-                "global_frequency_max": 0.7,
-                "lineage_frequency_min": 0.2,
-                "lineage_frequency_max": 0.8,
-                "minimum_distance": 20,
+                "a_position": 10,
+                "b_position": 20,
+                "c_position": 60,
+                "d_position": 85,
             },
             "experiment": {
                 "generations": 10,
@@ -64,6 +63,13 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual({row["checkpoint_id"] for row in cases}, {"rep_0001", "rep_0002"})
         self.assertEqual({row["mode"] for row in cases}, {0, 1})
         self.assertEqual({row["cross_hgt_probability"] for row in cases}, {0.0, 0.002, 0.02})
+        self.assertEqual(checkpoints[0]["a_position"], 10)
+        self.assertEqual(cases[0]["d_position"], 85)
+
+    def test_equal_focal_pair_distances_are_rejected(self) -> None:
+        self.config["loci"]["d_position"] = 70
+        with self.assertRaisesRegex(ValueError, "distances must differ"):
+            build(self.config)
 
     def test_seeds_are_stable_and_unique(self) -> None:
         _, first = build(self.config)

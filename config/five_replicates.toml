@@ -1,7 +1,7 @@
 [paths]
-reference = "inputs/reference_50kb.fa"
-checkpoint_root = "checkpoints_50kb_mu2e8"
-run_root = "runs_50kb_mu2e8"
+reference = "inputs/reference_100kb.fa"
+checkpoint_root = "checkpoints_100kb_seeded_mu2e8"
+run_root = "runs_100kb_seeded_mu2e8"
 manifest_root = "manifests"
 
 [design]
@@ -13,7 +13,7 @@ cross_hgt_probabilities = [0.0, 0.002, 0.02]
 master_seed = 20260809
 
 [genome]
-length = 50000
+length = 100000
 reference_seed = 2486
 mutation_rate = 2e-8
 mean_hgt_tract = 500
@@ -29,11 +29,10 @@ deep_clade_generations = 1000
 terminal_generations = 1000
 
 [loci]
-global_frequency_min = 0.10
-global_frequency_max = 0.90
-lineage_frequency_min = 0.05
-lineage_frequency_max = 0.95
-minimum_distance = 5000
+a_position = 10000
+b_position = 20000
+c_position = 60000
+d_position = 85000
 
 [experiment]
 generations = 1000
@@ -43,4 +42,4 @@ monitor_every = 50
 
 [postprocess]
 ancestral_ne = 10000
-oracle_tree_position = 25000
+oracle_tree_position = 50000

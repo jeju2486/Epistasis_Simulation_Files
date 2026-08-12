@@ -1,17 +1,17 @@
-// Build a neutral four-lineage bacterial population and select four common,
-// unlinked standing variants A-D. Target: SLiM 5.2.
+// Build a neutral four-lineage bacterial population and seed four balanced,
+// predeclared standing variants A-D at the checkpoint. Target: SLiM 5.2.
 
 initialize() {
     initializeSLiMModelType("nonWF");
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
     initializeTreeSeq();
 
-    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_50kb.fa");
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
     if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
     if (!exists("METRICS_FILE")) defineConstant("METRICS_FILE", "checkpoint_metrics.tsv");
 
-    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 50000);
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
     if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
@@ -23,11 +23,10 @@ initialize() {
     if (!exists("DEEP_GENERATIONS")) defineConstant("DEEP_GENERATIONS", 1000);
     if (!exists("TERMINAL_GENERATIONS")) defineConstant("TERMINAL_GENERATIONS", 1000);
 
-    if (!exists("GLOBAL_FREQ_MIN")) defineConstant("GLOBAL_FREQ_MIN", 0.10);
-    if (!exists("GLOBAL_FREQ_MAX")) defineConstant("GLOBAL_FREQ_MAX", 0.90);
-    if (!exists("LINEAGE_FREQ_MIN")) defineConstant("LINEAGE_FREQ_MIN", 0.05);
-    if (!exists("LINEAGE_FREQ_MAX")) defineConstant("LINEAGE_FREQ_MAX", 0.95);
-    if (!exists("MIN_DISTANCE")) defineConstant("MIN_DISTANCE", 5000);
+    if (!exists("A_POSITION")) defineConstant("A_POSITION", 10000);
+    if (!exists("B_POSITION")) defineConstant("B_POSITION", 20000);
+    if (!exists("C_POSITION")) defineConstant("C_POSITION", 60000);
+    if (!exists("D_POSITION")) defineConstant("D_POSITION", 85000);
 
     defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
     defineConstant("TERMINAL_SPLIT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);
@@ -39,8 +38,19 @@ initialize() {
 
     initializeMutationTypeNuc("m1", 1.0, "f", 0.0);
     m1.convertToSubstitution = F;
+    initializeMutationTypeNuc("m2", 1.0, "f", 0.0);
+    m2.convertToSubstitution = F;
     initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(MU));
-    initializeGenomicElement(g1, 0, L - 1);
+    initializeGenomicElementType("g0", m1, 1.0, mmJukesCantor(0.0));
+    initializeGenomicElement(g1, 0, A_POSITION - 1);
+    initializeGenomicElement(g0, A_POSITION, A_POSITION);
+    initializeGenomicElement(g1, A_POSITION + 1, B_POSITION - 1);
+    initializeGenomicElement(g0, B_POSITION, B_POSITION);
+    initializeGenomicElement(g1, B_POSITION + 1, C_POSITION - 1);
+    initializeGenomicElement(g0, C_POSITION, C_POSITION);
+    initializeGenomicElement(g1, C_POSITION + 1, D_POSITION - 1);
+    initializeGenomicElement(g0, D_POSITION, D_POSITION);
+    initializeGenomicElement(g1, D_POSITION + 1, L - 1);
 
     // All homologous exchange is implemented explicitly as HGT tracts.
     initializeRecombinationRate(0.0);
@@ -52,69 +62,47 @@ function (integer$) targetSize(o<Subpopulation>$ pop) {
     return N_TERMINAL;
 }
 
-function (object<Mutation>) chooseStandingLoci(void) {
-    muts = sim.mutationsOfType(m1);
-    sim.setValue("total_mutation_count", size(muts));
-    if (size(muts) < 4) {
-        diagnostics = "metric\tvalue\n" +
-                      "total_mutation_count\t" + size(muts) + "\n" +
-                      "frequency_candidate_count\t0\n";
-        writeFile(METRICS_FILE, diagnostics, append=F);
-        stop("Fewer than four segregating mutations exist at checkpoint.");
+function (object<Mutation>) seedStandingLoci(void) {
+    positions = c(A_POSITION, B_POSITION, C_POSITION, D_POSITION);
+    if ((size(unique(positions)) != 4) | any(positions != sort(positions)))
+        stop("A-D positions must be unique and ordered A < B < C < D.");
+    if ((positions[0] < 0) | (positions[3] >= L))
+        stop("A-D positions must lie within the genome.");
+    if ((B_POSITION - A_POSITION) == (D_POSITION - C_POSITION))
+        stop("A-B and C-D distances must differ in this design.");
+    existingPositions = sim.mutations.position;
+    if (any(existingPositions == A_POSITION) | any(existingPositions == B_POSITION) |
+        any(existingPositions == C_POSITION) | any(existingPositions == D_POSITION))
+        stop("A background mutation occurred at a protected focal position.");
+
+    // Randomize individuals within each terminal population, then cycle through
+    // all 16 four-locus haplotypes. With N=2500, every haplotype occurs 156 or
+    // 157 times per population; focal prevalences are therefore 0.4992-0.5000.
+    for (pop in sim.subpopulations) {
+        shuffled = sample(pop.individuals, pop.individualCount);
+        shuffled.tag = integerMod(seqAlong(shuffled), 16);
     }
 
-    fg = sim.mutationFrequencies(NULL, muts);
-    f1 = sim.mutationFrequencies(p1, muts);
-    f2 = sim.mutationFrequencies(p2, muts);
-    f3 = sim.mutationFrequencies(p3, muts);
-    f4 = sim.mutationFrequencies(p4, muts);
-
-    keep = (fg >= GLOBAL_FREQ_MIN) & (fg <= GLOBAL_FREQ_MAX) &
-           (f1 >= LINEAGE_FREQ_MIN) & (f1 <= LINEAGE_FREQ_MAX) &
-           (f2 >= LINEAGE_FREQ_MIN) & (f2 <= LINEAGE_FREQ_MAX) &
-           (f3 >= LINEAGE_FREQ_MIN) & (f3 <= LINEAGE_FREQ_MAX) &
-           (f4 >= LINEAGE_FREQ_MIN) & (f4 <= LINEAGE_FREQ_MAX);
-
-    candidates = muts[keep];
-    sim.setValue("frequency_candidate_count", size(candidates));
-    if (size(candidates) < 4) {
-        diagnostics = "metric\tvalue\n" +
-                      "total_mutation_count\t" + size(muts) + "\n" +
-                      "frequency_candidate_count\t" + size(candidates) + "\n" +
-                      "global_frequency_min\t" + GLOBAL_FREQ_MIN + "\n" +
-                      "global_frequency_max\t" + GLOBAL_FREQ_MAX + "\n" +
-                      "lineage_frequency_min\t" + LINEAGE_FREQ_MIN + "\n" +
-                      "lineage_frequency_max\t" + LINEAGE_FREQ_MAX + "\n";
-        writeFile(METRICS_FILE, diagnostics, append=F);
-        stop("Fewer than four mutations pass the standing-variation frequency criteria.");
+    allIndividuals = sim.subpopulations.individuals;
+    divisors = c(1, 2, 4, 8);
+    for (i in 0:3) {
+        states = integerMod(asInteger(allIndividuals.tag / divisors[i]), 2);
+        carriers = allIndividuals[states == 1];
+        targets = carriers.haplosomes;
+        ancestral = sim.chromosome.ancestralNucleotides(positions[i], positions[i]);
+        derived = "A";
+        if (ancestral == "A")
+            derived = "C";
+        focal = targets[0].addNewMutation(m2, 0.0, positions[i], NULL, NULL, derived);
+        if (size(targets) > 1)
+            targets[1:(size(targets) - 1)].addMutations(focal);
     }
+    allIndividuals.tag = 0;
 
-    // For points on a line, greedily taking the leftmost eligible point gives
-    // a maximum-cardinality distance-compatible set. Unlike the former
-    // randomized search, this cannot report a false failure. Initial LD is
-    // measured below but is not used to condition which truth loci are chosen.
-    ordered = candidates[order(candidates.position)];
-    spaced = ordered[0];
-    for (i in 1:(size(ordered) - 1)) {
-        candidate = ordered[i];
-        if ((candidate.position - spaced[size(spaced) - 1].position) >= MIN_DISTANCE)
-            spaced = c(spaced, candidate);
-    }
-    sim.setValue("max_distance_compatible_count", size(spaced));
-
-    if (size(spaced) < 4) {
-        diagnostics = "metric\tvalue\n" +
-                      "total_mutation_count\t" + size(muts) + "\n" +
-                      "frequency_candidate_count\t" + size(candidates) + "\n" +
-                      "max_distance_compatible_count\t" + size(spaced) + "\n" +
-                      "minimum_distance\t" + MIN_DISTANCE + "\n";
-        writeFile(METRICS_FILE, diagnostics, append=F);
-        stop("No distance-compatible quartet exists: " + size(candidates) +
-             " frequency-eligible mutations yield at most " + size(spaced) +
-             " loci separated by " + MIN_DISTANCE + " bp.");
-    }
-
-    return spaced[0:3];
+    loci = sim.mutationsOfType(m2);
+    if (size(loci) != 4)
+        stop("Expected exactly four seeded focal mutations.");
+    return loci[order(loci.position)];
 }
 
 function (void) writeCheckpointMetrics(object<Mutation> loci) {
@@ -125,11 +113,12 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
     f3 = sim.mutationFrequencies(p3, loci);
     f4 = sim.mutationFrequencies(p4, loci);
 
-    header = "label\tmutation_id\tposition\tglobal_frequency\tp1_frequency\tp2_frequency\tp3_frequency\tp4_frequency\n";
+    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeding_design\tglobal_frequency\tp1_frequency\tp2_frequency\tp3_frequency\tp4_frequency\n";
     writeFile(LOCI_FILE, header, append=F);
 
     for (i in 0:3) {
         line = labels[i] + "\t" + loci[i].id + "\t" + loci[i].position + "\t" +
+               loci[i].nucleotide + "\tbalanced_16_haplotype_cycle\t" +
                fg[i] + "\t" + f1[i] + "\t" + f2[i] + "\t" + f3[i] + "\t" + f4[i] + "\n";
         writeFile(LOCI_FILE, line, append=T);
     }
@@ -140,10 +129,13 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
               "p2_size\t" + p2.individualCount + "\n" +
               "p3_size\t" + p3.individualCount + "\n" +
               "p4_size\t" + p4.individualCount + "\n" +
-              "total_mutation_count\t" + sim.getValue("total_mutation_count") + "\n" +
-              "frequency_candidate_count\t" + sim.getValue("frequency_candidate_count") + "\n" +
-              "max_distance_compatible_count\t" + sim.getValue("max_distance_compatible_count") + "\n" +
-              "minimum_distance\t" + MIN_DISTANCE + "\n";
+              "background_mutation_count\t" + size(sim.mutationsOfType(m1)) + "\n" +
+              "seeded_mutation_count\t" + size(loci) + "\n" +
+              "seeding_design\tbalanced_16_haplotype_cycle\n" +
+              "A_position\t" + A_POSITION + "\n" +
+              "B_position\t" + B_POSITION + "\n" +
+              "C_position\t" + C_POSITION + "\n" +
+              "D_position\t" + D_POSITION + "\n";
 
     for (i in 0:2) {
         for (j in (i + 1):3) {
@@ -232,7 +224,7 @@ TERMINAL_SPLIT_TICK late() {
 }
 
 CHECKPOINT_TICK late() {
-    loci = chooseStandingLoci();
+    loci = seedStandingLoci();
     writeCheckpointMetrics(loci);
     sim.treeSeqOutput(CHECKPOINT_FILE);
     sim.simulationFinished();

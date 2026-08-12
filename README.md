@@ -50,7 +50,7 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 - two internal clades: 5,000 each;
 - four terminal populations: 2,500 each;
 - 250 sampled genomes per terminal population (`n=1,000`);
-- 50 kb haploid nucleotide genome;
+- 100 kb haploid nucleotide genome;
 - nucleotide mutation rate `2e-8` per site per generation;
 - 500 bp mean HGT tract;
 - within-lineage HGT probability 0.02 per offspring;
@@ -60,21 +60,29 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 Cross-lineage values are probabilities, not `rho` values multiplied by genome
 length. This removes the ambiguity in the older runner.
 
-## Standing variants A-D
+## Seeded standing variants A-D
 
-At the checkpoint, the model randomly selects four naturally segregating neutral
-mutations subject to predeclared criteria:
+After demographic burn-in, each checkpoint receives four neutral nucleotide mutations
+at positions fixed before analysis:
 
-- global derived-state frequency 0.10-0.90;
-- frequency 0.05-0.95 in every terminal population;
-- minimum physical separation 5 kb (10 times the mean HGT tract).
+| Locus | Zero-based position |
+|---|---:|
+| A | 10,000 |
+| B | 20,000 |
+| C | 60,000 |
+| D | 85,000 |
 
-Initial pairwise `r^2` is recorded for all six A-D pairs but is deliberately not used
-for selection. Screening truth loci on observed LD would condition the benchmark on
-an association statistic related to SpydrPick. Instead, the paired Mode 0 continuation
-measures any pre-existing LD. The checkpoint fails visibly if no distance-compatible
-quartet exists; it does not silently seed or use future results. The same checkpoint
-and the same A-D mutations are used for all paired continuations.
+Consequently A-B spans 10 kb and C-D spans 25 kb. Their unequal distances make the
+two truth pairs visually distinguishable, while both distances remain much larger than
+the 500 bp mean HGT tract.
+
+Within every terminal population, individuals are randomly ordered and assigned a
+cycle through all 16 four-locus haplotypes. With 2,500 individuals, every haplotype
+occurs 156 or 157 times per population, giving focal prevalences of approximately 0.5
+and negligible starting pairwise LD. Background mutation is disabled at the four focal
+positions, but HGT can transfer the focal alleles. The same seeded checkpoint supplies
+all matched Mode 0 and Mode 1 continuations. Neither SpydrPick nor KOVAR receives the
+truth labels or a restricted truth-pair list.
 
 ## Workflow
 
@@ -100,7 +108,7 @@ python scripts/build_manifest.py --config config/pilot.toml
 This creates:
 
 ```text
-inputs/reference_50kb.fa
+inputs/reference_100kb.fa
 manifests/checkpoints.tsv
 manifests/cases.tsv
 ```
@@ -179,13 +187,9 @@ params.tsv              exact parameters and seed
 oracle_local_tree.nwk   local true-ancestry tree (diagnostic)
 ```
 
-`oracle_local_tree.nwk` gives KOVAR true-tree information and must be labelled as an
-oracle diagnostic. For the realistic primary analysis, infer a core-genome tree from
-`core_snps.fa`:
-
-```bash
-bash scripts/infer_core_tree.sh runs/.../core_snps.fa runs/.../core_tree 12345
-```
+`oracle_local_tree.nwk` is the simulation-produced local genealogy at position 50 kb.
+This validation workflow uses it as oracle covariance and must label it accordingly.
+IQ-TREE is not run by the primary pipeline.
 
 ## All-pair comparison
 
@@ -250,41 +254,57 @@ universe:
 JOBS=1 THREADS_PER_CASE=8 bash scripts/run_kovar_all.sh
 ```
 
-The primary default uses a separately inferred `core_snps.fa` tree, tests both
-directions, uses 5% MAF and a minimum four-cell count of five, disables experimental
+The primary default uses `oracle_local_tree.nwk`, tests both directions, uses 5% MAF
+and a minimum four-cell count of five, disables experimental
 SPA, and disables full alternative-model refits. The score tests and directional
 p-values are still produced; disabling refits avoids potentially tens of thousands
 of expensive effect-estimation fits in an exhaustive scan. Override settings without
 editing the runner, for example:
 
 ```bash
-JOBS=1 THREADS_PER_CASE=8 \
+JOBS=1 THREADS_PER_CASE=8 TREE_MODE=oracle \
 MIN_MAF=0.05 MIN_CELL_COUNT=5 SPA_MODE=off FULL_REFIT_P=0 \
 bash scripts/run_kovar_all.sh
 ```
 
-`TREE_MODE=oracle` is available only as a clearly labelled true-tree diagnostic.
-`TREE_MODE=grm` uses KOVAR's same-matrix background-GRM fallback. Neither replaces
-the inferred-core-tree primary analysis.
+The oracle local tree is deliberate for this simulation validation. It evaluates KOVAR
+under known covariance rather than adding tree-inference error to the primary contrast.
 
 KOVAR 0.8.1 cannot read the compressed SpydrPick edge file directly. Each case runner
 therefore materializes a temporary plain pair file, runs KOVAR, and removes that copy
 after success. It reuses the exact binary FASTA analyzed by SpydrPick rather than
-performing an independent conversion. `MAX_PAIRS=0` means all pairs and is the primary analysis. A small
-prefix can be used to validate installation and estimate runtime, but it is an
-MI-ranked diagnostic rather than a fair end-to-end result:
+performing an independent conversion. `run_kovar_all.sh` fixes `--max-pairs 0`, so
+every MAF-eligible SpydrPick pair is tested by KOVAR in both directions.
+
+Results are written under each case's `kovar_v081_oracle/` directory. The exact commands,
+tree mode, candidate-universe label, and pair count are recorded in
+`run_metadata.json`; KOVAR's results are in `kovar_v081_oracle/results/`.
+
+## Complete five-replicate workflow
+
+Run the full simulation, exhaustive SpydrPick scan, plots, and exhaustive KOVAR scan
+with one command:
 
 ```bash
-MAX_PAIRS=10000 JOBS=1 THREADS_PER_CASE=4 bash scripts/run_kovar_all.sh
+conda activate epistasis-sim
+bash scripts/run_full_pipeline.sh
 ```
 
-Diagnostic and alternative-covariance runs use distinct directories, such as
-`kovar_v081_diagnostic_top_10000/`, `kovar_v081_oracle/`, and `kovar_v081_grm/`,
-so they cannot be mistaken for or overwrite the primary exhaustive result.
+Parallelism may be changed without altering statistical scope:
 
-Results are written under each case's `kovar_v081/` directory. The exact commands,
-tree mode, candidate-universe label, and pair count are recorded in
-`run_metadata.json`; KOVAR's results are in `kovar_v081/results/`.
+```bash
+CHECKPOINT_JOBS=2 \
+CASE_JOBS=6 \
+SPYDRPICK_JOBS=2 \
+SPYDRPICK_THREADS_PER_CASE=4 \
+KOVAR_JOBS=1 \
+KOVAR_THREADS_PER_CASE=8 \
+bash scripts/run_full_pipeline.sh
+```
+
+The launcher defaults to `config/five_replicates.toml`, the 5% shared MAF filter,
+all eligible pairs, both KOVAR directions, and the simulation-produced local tree.
+It is restart-safe because successful stage directories are skipped.
 
 ## Cross-lineage HGT sensitivity
 

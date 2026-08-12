@@ -27,11 +27,10 @@ deep_clade_generations = 50
 terminal_generations = 50
 
 [loci]
-global_frequency_min = 0.10
-global_frequency_max = 0.90
-lineage_frequency_min = 0.05
-lineage_frequency_max = 0.95
-minimum_distance = 1000
+a_position = 1000
+b_position = 2000
+c_position = 6000
+d_position = 8500
 
 [experiment]
 generations = 10

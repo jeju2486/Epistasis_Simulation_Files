@@ -7,14 +7,14 @@ initialize() {
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
     initializeTreeSeq();
 
-    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_50kb.fa");
+    if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
     if (!exists("TREE_OUT")) defineConstant("TREE_OUT", "out.trees");
     if (!exists("VCF_OUT")) defineConstant("VCF_OUT", "out.vcf");
     if (!exists("SAMPLE_FILE")) defineConstant("SAMPLE_FILE", "sample_names.tsv");
     if (!exists("MONITOR_FILE")) defineConstant("MONITOR_FILE", "monitor.tsv");
 
-    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 50000);
+    if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
     if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
@@ -32,6 +32,10 @@ initialize() {
     if (!exists("B_ID")) defineConstant("B_ID", -1);
     if (!exists("C_ID")) defineConstant("C_ID", -1);
     if (!exists("D_ID")) defineConstant("D_ID", -1);
+    if (!exists("A_POSITION")) defineConstant("A_POSITION", 10000);
+    if (!exists("B_POSITION")) defineConstant("B_POSITION", 20000);
+    if (!exists("C_POSITION")) defineConstant("C_POSITION", 60000);
+    if (!exists("D_POSITION")) defineConstant("D_POSITION", 85000);
 
     defineConstant("L", initializeAncestralNucleotides(REF_FILE));
     if (L != GENOME_LENGTH)
@@ -39,8 +43,19 @@ initialize() {
 
     initializeMutationTypeNuc("m1", 1.0, "f", 0.0);
     m1.convertToSubstitution = F;
+    initializeMutationTypeNuc("m2", 1.0, "f", 0.0);
+    m2.convertToSubstitution = F;
     initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(MU));
-    initializeGenomicElement(g1, 0, L - 1);
+    initializeGenomicElementType("g0", m1, 1.0, mmJukesCantor(0.0));
+    initializeGenomicElement(g1, 0, A_POSITION - 1);
+    initializeGenomicElement(g0, A_POSITION, A_POSITION);
+    initializeGenomicElement(g1, A_POSITION + 1, B_POSITION - 1);
+    initializeGenomicElement(g0, B_POSITION, B_POSITION);
+    initializeGenomicElement(g1, B_POSITION + 1, C_POSITION - 1);
+    initializeGenomicElement(g0, C_POSITION, C_POSITION);
+    initializeGenomicElement(g1, C_POSITION + 1, D_POSITION - 1);
+    initializeGenomicElement(g0, D_POSITION, D_POSITION);
+    initializeGenomicElement(g1, D_POSITION + 1, L - 1);
     initializeRecombinationRate(0.0);
 }
 

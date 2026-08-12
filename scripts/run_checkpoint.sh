@@ -8,8 +8,7 @@ OUTDIR="" REF_FILE="" SEED=""
 GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN=""
 N_ANCESTRAL="" N_CLADE="" N_TERMINAL=""
 ANCESTRAL_GENERATIONS="" DEEP_GENERATIONS="" TERMINAL_GENERATIONS=""
-GLOBAL_FREQ_MIN="" GLOBAL_FREQ_MAX="" LINEAGE_FREQ_MIN="" LINEAGE_FREQ_MAX=""
-MINIMUM_DISTANCE=""
+A_POSITION="" B_POSITION="" C_POSITION="" D_POSITION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,16 +25,15 @@ while [[ $# -gt 0 ]]; do
     --ancestral-generations) ANCESTRAL_GENERATIONS="$2"; shift 2 ;;
     --deep-generations) DEEP_GENERATIONS="$2"; shift 2 ;;
     --terminal-generations) TERMINAL_GENERATIONS="$2"; shift 2 ;;
-    --global-freq-min) GLOBAL_FREQ_MIN="$2"; shift 2 ;;
-    --global-freq-max) GLOBAL_FREQ_MAX="$2"; shift 2 ;;
-    --lineage-freq-min) LINEAGE_FREQ_MIN="$2"; shift 2 ;;
-    --lineage-freq-max) LINEAGE_FREQ_MAX="$2"; shift 2 ;;
-    --minimum-distance) MINIMUM_DISTANCE="$2"; shift 2 ;;
+    --a-position) A_POSITION="$2"; shift 2 ;;
+    --b-position) B_POSITION="$2"; shift 2 ;;
+    --c-position) C_POSITION="$2"; shift 2 ;;
+    --d-position) D_POSITION="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS GLOBAL_FREQ_MIN GLOBAL_FREQ_MAX LINEAGE_FREQ_MIN LINEAGE_FREQ_MAX MINIMUM_DISTANCE)
+required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS A_POSITION B_POSITION C_POSITION D_POSITION)
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
@@ -92,11 +90,13 @@ terminal_size	$N_TERMINAL
 ancestral_generations	$ANCESTRAL_GENERATIONS
 deep_generations	$DEEP_GENERATIONS
 terminal_generations	$TERMINAL_GENERATIONS
-global_frequency_min	$GLOBAL_FREQ_MIN
-global_frequency_max	$GLOBAL_FREQ_MAX
-lineage_frequency_min	$LINEAGE_FREQ_MIN
-lineage_frequency_max	$LINEAGE_FREQ_MAX
-minimum_distance	$MINIMUM_DISTANCE
+A_position	$A_POSITION
+B_position	$B_POSITION
+C_position	$C_POSITION
+D_position	$D_POSITION
+AB_distance	$((B_POSITION - A_POSITION))
+CD_distance	$((D_POSITION - C_POSITION))
+focal_seeding	balanced_16_haplotype_cycle
 EOF
 
 "$SLIM_BIN" -s "$SEED" \
@@ -114,16 +114,20 @@ EOF
   -d "ANCESTRAL_GENERATIONS=$ANCESTRAL_GENERATIONS" \
   -d "DEEP_GENERATIONS=$DEEP_GENERATIONS" \
   -d "TERMINAL_GENERATIONS=$TERMINAL_GENERATIONS" \
-  -d "GLOBAL_FREQ_MIN=$GLOBAL_FREQ_MIN" \
-  -d "GLOBAL_FREQ_MAX=$GLOBAL_FREQ_MAX" \
-  -d "LINEAGE_FREQ_MIN=$LINEAGE_FREQ_MIN" \
-  -d "LINEAGE_FREQ_MAX=$LINEAGE_FREQ_MAX" \
-  -d "MIN_DISTANCE=$MINIMUM_DISTANCE" \
+  -d "A_POSITION=$A_POSITION" \
+  -d "B_POSITION=$B_POSITION" \
+  -d "C_POSITION=$C_POSITION" \
+  -d "D_POSITION=$D_POSITION" \
   "$REPO_ROOT/slim/build_checkpoint.slim" \
   > "$TMPDIR_RUN/slim.log" 2>&1
 
 [[ -s "$TMPDIR_RUN/checkpoint.trees" ]] || { echo "Missing checkpoint.trees" >&2; exit 1; }
-python "$REPO_ROOT/scripts/validate_selected_loci.py" "$TMPDIR_RUN/selected_loci.tsv"
+python "$REPO_ROOT/scripts/validate_selected_loci.py" \
+  "$TMPDIR_RUN/selected_loci.tsv" \
+  --a-position "$A_POSITION" \
+  --b-position "$B_POSITION" \
+  --c-position "$C_POSITION" \
+  --d-position "$D_POSITION"
 [[ -s "$TMPDIR_RUN/checkpoint_metrics.tsv" ]] || { echo "Missing checkpoint metrics" >&2; exit 1; }
 
 touch "$TMPDIR_RUN/_SUCCESS"

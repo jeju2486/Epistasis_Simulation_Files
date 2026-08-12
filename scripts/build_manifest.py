@@ -35,6 +35,18 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     run_root = repo_path(config["paths"]["run_root"])
     reference = relative(repo_path(config["paths"]["reference"]))
     master_seed = int(design["master_seed"])
+    focal_positions = [
+        int(loci["a_position"]),
+        int(loci["b_position"]),
+        int(loci["c_position"]),
+        int(loci["d_position"]),
+    ]
+    if focal_positions != sorted(set(focal_positions)):
+        raise ValueError("A-D positions must be unique and ordered A < B < C < D")
+    if focal_positions[0] < 0 or focal_positions[-1] >= int(genome["length"]):
+        raise ValueError("A-D positions must lie within the simulated genome")
+    if focal_positions[1] - focal_positions[0] == focal_positions[3] - focal_positions[2]:
+        raise ValueError("A-B and C-D distances must differ in this visualization design")
 
     checkpoints: list[dict[str, object]] = []
     cases: list[dict[str, object]] = []
@@ -59,11 +71,10 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                 "ancestral_generations": population["ancestral_generations"],
                 "deep_generations": population["deep_clade_generations"],
                 "terminal_generations": population["terminal_generations"],
-                "global_frequency_min": loci["global_frequency_min"],
-                "global_frequency_max": loci["global_frequency_max"],
-                "lineage_frequency_min": loci["lineage_frequency_min"],
-                "lineage_frequency_max": loci["lineage_frequency_max"],
-                "minimum_distance": loci["minimum_distance"],
+                "a_position": focal_positions[0],
+                "b_position": focal_positions[1],
+                "c_position": focal_positions[2],
+                "d_position": focal_positions[3],
             }
         )
 
@@ -98,6 +109,10 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                         "monitor_every": experiment["monitor_every"],
                         "ancestral_ne": postprocess["ancestral_ne"],
                         "oracle_tree_position": postprocess["oracle_tree_position"],
+                        "a_position": focal_positions[0],
+                        "b_position": focal_positions[1],
+                        "c_position": focal_positions[2],
+                        "d_position": focal_positions[3],
                     }
                 )
 

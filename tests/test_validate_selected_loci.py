@@ -32,6 +32,33 @@ class SelectedLociValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exactly one record"):
                 validate(path)
 
+    def test_validates_predeclared_positions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected_loci.tsv"
+            path.write_text(
+                HEADER + "A\t1\t10\nB\t2\t20\nC\t3\t60\nD\t4\t85\n",
+                encoding="utf-8",
+            )
+            expected = {"A": 10, "B": 20, "C": 60, "D": 85}
+            validate(path, expected)
+            expected["D"] = 86
+            with self.assertRaisesRegex(ValueError, "expected 86"):
+                validate(path, expected)
+
+    def test_rejects_unbalanced_seed_frequency(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected_loci.tsv"
+            path.write_text(
+                "label\tmutation_id\tposition\tseeding_design\tglobal_frequency\n"
+                "A\t1\t10\tbalanced_16_haplotype_cycle\t0.8\n"
+                "B\t2\t20\tbalanced_16_haplotype_cycle\t0.5\n"
+                "C\t3\t60\tbalanced_16_haplotype_cycle\t0.5\n"
+                "D\t4\t85\tbalanced_16_haplotype_cycle\t0.5\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unbalanced initial"):
+                validate(path)
+
 
 if __name__ == "__main__":
     unittest.main()

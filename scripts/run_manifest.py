@@ -29,11 +29,10 @@ def checkpoint_command(row: dict[str, str]) -> list[str]:
         "--ancestral-generations", row["ancestral_generations"],
         "--deep-generations", row["deep_generations"],
         "--terminal-generations", row["terminal_generations"],
-        "--global-freq-min", row["global_frequency_min"],
-        "--global-freq-max", row["global_frequency_max"],
-        "--lineage-freq-min", row["lineage_frequency_min"],
-        "--lineage-freq-max", row["lineage_frequency_max"],
-        "--minimum-distance", row["minimum_distance"],
+        "--a-position", row["a_position"],
+        "--b-position", row["b_position"],
+        "--c-position", row["c_position"],
+        "--d-position", row["d_position"],
     ]
 
 
@@ -58,6 +57,10 @@ def case_command(row: dict[str, str]) -> list[str]:
         "--monitor-every", row["monitor_every"],
         "--ancestral-ne", row["ancestral_ne"],
         "--oracle-tree-position", row["oracle_tree_position"],
+        "--a-position", row["a_position"],
+        "--b-position", row["b_position"],
+        "--c-position", row["c_position"],
+        "--d-position", row["d_position"],
     ]
 
 

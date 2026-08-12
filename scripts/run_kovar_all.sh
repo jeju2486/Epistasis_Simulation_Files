@@ -5,8 +5,7 @@ MANIFEST="${MANIFEST:-manifests/cases.tsv}"
 JOBS="${JOBS:-1}"
 THREADS_PER_CASE="${THREADS_PER_CASE:-4}"
 TREE_THREADS="${TREE_THREADS:-1}"
-MAX_PAIRS="${MAX_PAIRS:-0}"
-TREE_MODE="${TREE_MODE:-core}"
+TREE_MODE="${TREE_MODE:-oracle}"
 MIN_MAF="${MIN_MAF:-0.05}"
 MIN_CELL_COUNT="${MIN_CELL_COUNT:-5}"
 SPA_MODE="${SPA_MODE:-off}"
@@ -26,4 +25,4 @@ python3 scripts/run_kovar_manifest.py \
   --full-refit-p "$FULL_REFIT_P" \
   --worker-chunk-size "$WORKER_CHUNK_SIZE" \
   --predictor-batch-size "$PREDICTOR_BATCH_SIZE" \
-  --max-pairs "$MAX_PAIRS"
+  --max-pairs 0

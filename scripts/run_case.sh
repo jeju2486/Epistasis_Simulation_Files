@@ -8,6 +8,7 @@ OUTDIR="" CHECKPOINT_DIR="" REF_FILE="" SEED="" MODE="" CROSS_HGT=""
 GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN="" N_TERMINAL=""
 SAMPLE_PER_TERMINAL="" EXPERIMENT_GENERATIONS="" S_AB="" S_CD="" MONITOR_EVERY=""
 ANCESTRAL_NE="" ORACLE_TREE_POSITION=""
+A_POSITION="" B_POSITION="" C_POSITION="" D_POSITION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,11 +30,15 @@ while [[ $# -gt 0 ]]; do
     --monitor-every) MONITOR_EVERY="$2"; shift 2 ;;
     --ancestral-ne) ANCESTRAL_NE="$2"; shift 2 ;;
     --oracle-tree-position) ORACLE_TREE_POSITION="$2"; shift 2 ;;
+    --a-position) A_POSITION="$2"; shift 2 ;;
+    --b-position) B_POSITION="$2"; shift 2 ;;
+    --c-position) C_POSITION="$2"; shift 2 ;;
+    --d-position) D_POSITION="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-required=(OUTDIR CHECKPOINT_DIR REF_FILE SEED MODE CROSS_HGT GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_TERMINAL SAMPLE_PER_TERMINAL EXPERIMENT_GENERATIONS S_AB S_CD MONITOR_EVERY ANCESTRAL_NE ORACLE_TREE_POSITION)
+required=(OUTDIR CHECKPOINT_DIR REF_FILE SEED MODE CROSS_HGT GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_TERMINAL SAMPLE_PER_TERMINAL EXPERIMENT_GENERATIONS S_AB S_CD MONITOR_EVERY ANCESTRAL_NE ORACLE_TREE_POSITION A_POSITION B_POSITION C_POSITION D_POSITION)
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
@@ -99,6 +104,10 @@ A_mutation_id	$A_ID
 B_mutation_id	$B_ID
 C_mutation_id	$C_ID
 D_mutation_id	$D_ID
+A_position	$A_POSITION
+B_position	$B_POSITION
+C_position	$C_POSITION
+D_position	$D_POSITION
 experimental_generations	$EXPERIMENT_GENERATIONS
 s_ab	$S_AB
 s_cd	$S_CD
@@ -127,6 +136,10 @@ EOF
   -d "B_ID=$B_ID" \
   -d "C_ID=$C_ID" \
   -d "D_ID=$D_ID" \
+  -d "A_POSITION=$A_POSITION" \
+  -d "B_POSITION=$B_POSITION" \
+  -d "C_POSITION=$C_POSITION" \
+  -d "D_POSITION=$D_POSITION" \
   "$REPO_ROOT/slim/continue_experiment.slim" \
   > "$TMPDIR_RUN/slim.log" 2>&1
 
