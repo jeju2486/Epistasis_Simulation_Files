@@ -88,12 +88,13 @@ function (object<Mutation>) seedStandingLoci(void) {
     for (i in 0:3) {
         states = integerMod(asInteger(allIndividuals.tag / divisors[i]), 2);
         carriers = allIndividuals[states == 1];
-        targets = carriers.haplosomes;
+        targets = carriers.haplosomesNonNull;
         ancestral = sim.chromosome.ancestralNucleotides(positions[i], positions[i]);
         derived = "A";
         if (ancestral == "A")
             derived = "C";
-        focal = targets[0].addNewMutation(m2, 0.0, positions[i], NULL, NULL, derived);
+        focal = targets[0].addNewMutation(m2, 0.0, positions[i],
+            originSubpop=NULL, nucleotide=derived);
         if (size(targets) > 1)
             targets[1:(size(targets) - 1)].addMutations(focal);
     }
