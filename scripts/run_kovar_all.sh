@@ -26,3 +26,7 @@ python3 scripts/run_kovar_manifest.py \
   --worker-chunk-size "$WORKER_CHUNK_SIZE" \
   --predictor-batch-size "$PREDICTOR_BATCH_SIZE" \
   --max-pairs 0
+
+python3 scripts/plot_kovar.py \
+  --manifest "$MANIFEST" \
+  --tree-mode "$TREE_MODE"

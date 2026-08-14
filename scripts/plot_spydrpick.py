@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create per-case all-pair MI heatmaps and an aggregate truth-rank plot."""
+"""Plot PAN-GWES-style physical distance versus MI for every case."""
 
 from __future__ import annotations
 
@@ -7,89 +7,133 @@ import argparse
 import csv
 import gzip
 import math
+from itertools import combinations
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 from simflow import read_tsv, repo_path
 from spydrpick_case import parse_edge
 
 
-def plot_case(case_dir: Path, genome_length: int, bins: int, result_name: str) -> list[dict[str, str]]:
-    result = case_dir / result_name
-    truth = read_tsv(result / "truth_pairs.tsv")
-    with (result / "eligible_loci.tsv").open(encoding="utf-8", newline="") as handle:
-        positions = [int(row["slim_position"]) for row in csv.DictReader(handle, delimiter="\t")]
-    total_pairs = int(truth[0]["total_pairs"])
-    rank_stride = max(1, math.ceil(total_pairs / 100_000))
-    sampled_ranks: list[int] = []
-    sampled_mi: list[float] = []
-    maximum = np.full((bins, bins), np.nan)
-    with gzip.open(result / "spydrpick.edges.gz", "rt", encoding="utf-8") as handle:
-        for rank, line in enumerate(handle, start=1):
+FOCAL_LABELS = ("A", "B", "C", "D")
+FOCAL_COLORS = {
+    "AB": "#D55E00",
+    "AC": "#E69F00",
+    "AD": "#CC79A7",
+    "BC": "#009E73",
+    "BD": "#56B4E9",
+    "CD": "#0072B2",
+}
+
+
+def eligible_positions(path: Path) -> list[int]:
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    columns = [int(row["filtered_column"]) for row in rows]
+    if columns != list(range(len(rows))):
+        raise ValueError("eligible-locus columns must be contiguous and zero-based")
+    return [int(row["slim_position"]) for row in rows]
+
+
+def focal_pair_columns(selected_loci: Path, positions: list[int]) -> dict[tuple[int, int], str]:
+    focal = {row["label"]: int(row["position"]) for row in read_tsv(selected_loci)}
+    if set(focal) != set(FOCAL_LABELS):
+        raise ValueError("selected_loci.tsv must contain exactly A, B, C and D")
+    position_to_column = {position: column for column, position in enumerate(positions)}
+    pairs: dict[tuple[int, int], str] = {}
+    for left, right in combinations(FOCAL_LABELS, 2):
+        if focal[left] in position_to_column and focal[right] in position_to_column:
+            u, v = sorted((position_to_column[focal[left]], position_to_column[focal[right]]))
+            pairs[(u, v)] = left + right
+    return pairs
+
+
+def distance_mi_points(
+    edges: Path,
+    positions: list[int],
+    focal_columns: dict[tuple[int, int], str],
+    max_background_points: int,
+) -> tuple[list[float], list[float], dict[str, tuple[float, float]]]:
+    total_pairs = len(positions) * (len(positions) - 1) // 2
+    stride = max(1, math.ceil(max(1, total_pairs - len(focal_columns)) / max_background_points))
+    background_distance: list[float] = []
+    background_mi: list[float] = []
+    focal: dict[str, tuple[float, float]] = {}
+    with gzip.open(edges, "rt", encoding="utf-8") as handle:
+        for row_index, line in enumerate(handle):
             if not line.strip():
                 continue
-            col1, col2, _distance, _aracne, mi = parse_edge(line)
-            p1, p2 = positions[col1], positions[col2]
-            if rank == 1 or rank == total_pairs or rank % rank_stride == 0:
-                sampled_ranks.append(rank)
-                sampled_mi.append(mi)
-            i = min(bins - 1, p1 * bins // genome_length)
-            j = min(bins - 1, p2 * bins // genome_length)
-            if math.isnan(maximum[i, j]) or mi > maximum[i, j]:
-                maximum[i, j] = mi
-                maximum[j, i] = mi
+            col1, col2, distance, _aracne, mi = parse_edge(line)
+            key = tuple(sorted((col1, col2)))
+            distance_kb = distance / 1000.0
+            if key in focal_columns:
+                focal[focal_columns[key]] = (distance_kb, mi)
+            elif row_index % stride == 0:
+                background_distance.append(distance_kb)
+                background_mi.append(mi)
+    return background_distance, background_mi, focal
 
-    fig, ax = plt.subplots(figsize=(7.2, 6.2), constrained_layout=True)
-    image = ax.imshow(
-        maximum, origin="lower", extent=(0, genome_length, 0, genome_length),
-        cmap="viridis", aspect="equal", interpolation="nearest",
+
+def plot_case(
+    case_dir: Path,
+    case_id: str,
+    result_name: str,
+    max_background_points: int,
+) -> list[dict[str, str]]:
+    result = case_dir / result_name
+    positions = eligible_positions(result / "eligible_loci.tsv")
+    focal_columns = focal_pair_columns(case_dir / "selected_loci.tsv", positions)
+    distances, mi_values, focal = distance_mi_points(
+        result / "spydrpick.edges.gz", positions, focal_columns, max_background_points
     )
-    for row, color in zip(truth, ("#e45756", "#f2cf5b"), strict=True):
-        if row["candidate_status"] != "eligible":
-            continue
-        x, y = int(row["u_position"]), int(row["v_position"])
-        ax.scatter([x], [y], s=80, facecolors="none", edgecolors=color, linewidths=2, label=row["pair"])
-    ax.set(xlabel="Locus 1 position (bp)", ylabel="Locus 2 position (bp)", title=f"All-pair SpydrPick MI: {case_dir.name}")
-    ax.legend(frameon=False)
-    fig.colorbar(image, ax=ax, label="Maximum MI within genomic bin pair")
-    fig.savefig(result / "all_pair_mi_heatmap.png", dpi=180)
-    plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(7.2, 5.2), constrained_layout=True)
-    ax.plot(np.asarray(sampled_ranks) / total_pairs, sampled_mi, color="#4c78a8", linewidth=1)
-    for row, color in zip(truth, ("#e45756", "#f2cf5b"), strict=True):
-        if row["candidate_status"] != "eligible":
+    fig, ax = plt.subplots(figsize=(7.6, 5.4), constrained_layout=True)
+    ax.scatter(
+        distances, mi_values, s=5, color="#777777", alpha=0.22,
+        linewidths=0, rasterized=True, label="Other eligible pairs",
+    )
+    for pair in FOCAL_COLORS:
+        if pair not in focal:
             continue
-        ax.scatter(float(row["rank_fraction"]), float(row["mi"]), s=65, color=color, label=row["pair"], zorder=3)
-    ax.set_xscale("log")
-    ax.set(xlabel="MI rank / all pairs (lower is better)", ylabel="Mutual information", title=f"SpydrPick all-pair rank curve: {case_dir.name}")
-    ax.grid(alpha=0.2)
-    ax.legend(frameon=False)
-    fig.savefig(result / "mi_rank_curve.png", dpi=180)
+        distance, mi = focal[pair]
+        ax.scatter(
+            [distance], [mi], s=70, color=FOCAL_COLORS[pair],
+            edgecolors="black", linewidths=0.6, label=pair, zorder=4,
+        )
+        ax.annotate(pair, (distance, mi), xytext=(4, 4), textcoords="offset points", fontsize=8)
+    ax.set(
+        xlabel="Physical distance between SNPs (kb)", ylabel="Mutual information (MI)",
+        title=f"SpydrPick covariation by genomic distance: {case_id}",
+    )
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+    ax.grid(alpha=0.18, linewidth=0.6)
+    ax.legend(frameon=False, ncols=2, fontsize=8)
+    fig.savefig(result / "mi_vs_distance.png", dpi=220)
     plt.close(fig)
-    return truth
+    return read_tsv(result / "truth_pairs.tsv")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="manifests/cases.tsv")
     parser.add_argument("--output-dir")
-    parser.add_argument("--bins", type=int, default=150)
+    parser.add_argument("--max-background-points", type=int, default=250_000)
     parser.add_argument("--unweighted", action="store_true")
     args = parser.parse_args()
-    if args.bins < 10:
-        parser.error("--bins must be at least 10")
+    if args.max_background_points < 1:
+        parser.error("--max-background-points must be positive")
     result_name = "spydrpick_all_pairs_unweighted" if args.unweighted else "spydrpick_all_pairs"
     aggregate: list[dict[str, str]] = []
     for case in read_tsv(repo_path(args.manifest)):
         case_dir = repo_path(case["out_dir"])
         if not (case_dir / result_name / "_SUCCESS").exists():
             raise SystemExit(f"missing completed SpydrPick result: {case_dir / result_name}")
-        for row in plot_case(case_dir, int(case["genome_length"]), args.bins, result_name):
+        for row in plot_case(case_dir, case["case_id"], result_name, args.max_background_points):
             aggregate.append({**case, **row})
 
     output = repo_path(args.output_dir or f"results/{result_name}")
@@ -100,29 +144,12 @@ def main() -> None:
         "u_position", "v_position", "physical_distance",
     ]
     with (output / "truth_pair_ranks.tsv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n", extrasaction="ignore")
+        writer = csv.DictWriter(
+            handle, fieldnames=fields, delimiter="\t", lineterminator="\n", extrasaction="ignore"
+        )
         writer.writeheader()
         writer.writerows(aggregate)
-
-    groups: dict[tuple[str, str, str], list[float]] = {}
-    for row in aggregate:
-        if row["candidate_status"] != "eligible":
-            continue
-        key = (row["mode"], row["cross_hgt_probability"], row["pair"])
-        groups.setdefault(key, []).append(float(row["rank_fraction"]))
-    keys = sorted(groups, key=lambda key: (int(key[0]), float(key[1]), key[2]))
-    if not groups:
-        raise SystemExit("no eligible AB or CD truth pairs were available to plot")
-    data = [groups[key] for key in keys]
-    labels = [f"m{mode}\nhgt={hgt}\n{pair}" for mode, hgt, pair in keys]
-    fig, ax = plt.subplots(figsize=(max(8, len(keys) * 0.75), 5.2), constrained_layout=True)
-    ax.boxplot(data, tick_labels=labels, showmeans=True)
-    ax.set_yscale("log")
-    ax.set(ylabel="MI rank / all pairs (lower is better)", title="SpydrPick rank of truth pairs")
-    ax.grid(axis="y", alpha=0.25)
-    fig.savefig(output / "truth_pair_rank_summary.png", dpi=180)
-    plt.close(fig)
-    print(f"[done] plots and summary: {output}")
+    print(f"[done] distance-MI plots and diagnostic rank table: {output}")
 
 
 if __name__ == "__main__":

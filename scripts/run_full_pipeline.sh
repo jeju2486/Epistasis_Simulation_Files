@@ -66,4 +66,8 @@ python3 scripts/run_kovar_manifest.py \
   --full-refit-p 0 \
   --max-pairs 0
 
-echo "[done] simulation -> exhaustive SpydrPick -> exhaustive KOVAR 0.8.1"
+python3 scripts/plot_kovar.py \
+  --manifest manifests/cases.tsv \
+  --tree-mode oracle
+
+echo "[done] simulation -> exhaustive SpydrPick -> exhaustive KOVAR 0.8.1 -> distance plots"

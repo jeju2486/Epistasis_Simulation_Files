@@ -229,13 +229,17 @@ python scripts/plot_spydrpick.py --manifest manifests/cases.tsv --unweighted
 
 Each case receives `spydrpick_all_pairs/spydrpick.edges.gz`, a small
 `truth_pairs.tsv` with the MI and all-pair ranks of A-B and C-D, the exact command
-metadata, log, and `all_pair_mi_heatmap.png`. Aggregate truth-pair ranks are written
-to `results/spydrpick_all_pairs/`. Each case also has `mi_rank_curve.png`, with A-B
-and C-D highlighted. The heatmap bins the genome for display but every pair
-contributes; it is not a top-N visualization. If a selected locus is lost or
-fixed before sampling, its truth pair is retained with `candidate_status=locus_absent`
-rather than being misreported as a statistical failure. A sampled truth locus below
-the predeclared 5% MAF threshold is recorded separately as `maf_filtered`.
+metadata, log, and `mi_vs_distance.png`. The PAN-GWES-style figure plots physical
+SNP-pair distance in kb against MI. Ordinary eligible pairs are grey; AB, AC, AD,
+BC, BD and CD use stable focal-pair colours. At most 250,000 ordinary points are
+drawn to keep the raster figure tractable, but this is display-only thinning: all
+pairs remain in `spydrpick.edges.gz`, and focal pairs are never thinned. The rank
+curve and aggregate rank boxplot are not generated, while the diagnostic ranks
+remain in `results/spydrpick_all_pairs/truth_pair_ranks.tsv`. If a selected locus
+is lost or fixed before sampling, its truth pair is retained with
+`candidate_status=locus_absent` rather than being misreported as a statistical
+failure. A sampled truth locus below the predeclared 5% MAF threshold is recorded
+separately as `maf_filtered`.
 
 ## KOVAR 0.8.1 analysis
 
@@ -279,6 +283,12 @@ every MAF-eligible SpydrPick pair is tested by KOVAR in both directions.
 Results are written under each case's `kovar_v081_oracle/` directory. The exact commands,
 tree mode, candidate-universe label, and pair count are recorded in
 `run_metadata.json`; KOVAR's results are in `kovar_v081_oracle/results/`.
+Each case also receives `kovar_p_vs_distance.png`, with the same distance axis and
+focal-pair colour mapping as the SpydrPick figure. Its y-axis is directional
+`-log10(p_primary)`; upward and downward triangles distinguish `u_predicts_v` and
+`v_predicts_u`. A dashed line shows the directional Bonferroni 0.05 threshold.
+Display-only thinning is applied to ordinary pairs, never to focal pairs or the
+underlying exhaustive KOVAR result table.
 
 ## Complete five-replicate workflow
 
