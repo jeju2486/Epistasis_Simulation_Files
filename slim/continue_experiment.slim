@@ -5,7 +5,9 @@
 initialize() {
     initializeSLiMModelType("nonWF");
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
-    initializeTreeSeq();
+    // This continuation retains the checkpoint's non-overlapping life cycle:
+    // one tick is exactly one generation.
+    initializeTreeSeq(timeUnit="generations");
 
     if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");

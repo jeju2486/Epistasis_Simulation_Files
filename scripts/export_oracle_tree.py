@@ -24,6 +24,24 @@ def sample_labels(path: Path) -> dict[int, str]:
         }
 
 
+def generations_time_units(ts: tskit.TreeSequence) -> tskit.TreeSequence:
+    """Declare the model's exact one-tick-per-generation time scale.
+
+    Older outputs from this simulation used SLiM's default ``ticks`` label.
+    Relabelling does not change node times; it records the biological unit that
+    this non-overlapping life cycle already implements.
+    """
+    if ts.time_units == "generations":
+        return ts
+    if ts.time_units != "ticks":
+        raise ValueError(
+            f"Expected tree time units to be ticks or generations, found {ts.time_units!r}"
+        )
+    tables = ts.dump_tables()
+    tables.time_units = "generations"
+    return tables.tree_sequence()
+
+
 def export(
     trees_path: Path,
     sample_map_path: Path,
@@ -34,6 +52,7 @@ def export(
 ) -> int:
     labels_by_pedigree = sample_labels(sample_map_path)
     ts = tskit.load(trees_path)
+    ts = generations_time_units(ts)
     ts = pyslim.recapitate(
         ts,
         ancestral_Ne=ancestral_ne,

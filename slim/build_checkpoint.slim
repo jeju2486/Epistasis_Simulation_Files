@@ -4,7 +4,9 @@
 initialize() {
     initializeSLiMModelType("nonWF");
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
-    initializeTreeSeq();
+    // Adults reproduce once and are then removed, so one tick is exactly one
+    // generation.  Declare that equivalence for downstream msprime use.
+    initializeTreeSeq(timeUnit="generations");
 
     if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
