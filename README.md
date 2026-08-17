@@ -54,7 +54,8 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 - nucleotide mutation rate `2e-8` per site per generation;
 - 500 bp mean HGT tract;
 - within-lineage HGT probability 0.02 per offspring;
-- 1,000 experimental generations;
+- 5,000 experimental generations;
+- mode-1 coefficients `S_AB=0.003` and `S_CD=0.003`;
 - cross-lineage HGT probabilities 0, 0.002 and 0.02.
 
 Cross-lineage values are probabilities, not `rho` values multiplied by genome
@@ -319,7 +320,7 @@ It is restart-safe because successful stage directories are skipped.
 ## Cross-lineage HGT sensitivity
 
 All checkpoints are built with zero cross-lineage HGT. Values 0, 0.002 and 0.02 are
-applied only during the matched 1,000-generation continuation. This isolates the
+applied only during the matched 5,000-generation continuation. This isolates the
 effect of subsequent mixing while holding the initial population structure fixed.
 
 A distinct future experiment would allow cross-lineage HGT throughout population

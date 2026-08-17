@@ -23,12 +23,12 @@ initialize() {
     if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);
     if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
     if (!exists("SAMPLE_PER_TERMINAL")) defineConstant("SAMPLE_PER_TERMINAL", 250);
-    if (!exists("EXPERIMENT_GENERATIONS")) defineConstant("EXPERIMENT_GENERATIONS", 1000);
+    if (!exists("EXPERIMENT_GENERATIONS")) defineConstant("EXPERIMENT_GENERATIONS", 5000);
     if (!exists("MONITOR_EVERY")) defineConstant("MONITOR_EVERY", 50);
 
     if (!exists("MODE")) defineConstant("MODE", 0);
-    if (!exists("S_AB")) defineConstant("S_AB", 0.001);
-    if (!exists("S_CD")) defineConstant("S_CD", 0.0015);
+    if (!exists("S_AB")) defineConstant("S_AB", 0.003);
+    if (!exists("S_CD")) defineConstant("S_CD", 0.003);
 
     if (!exists("A_ID")) defineConstant("A_ID", -1);
     if (!exists("B_ID")) defineConstant("B_ID", -1);
