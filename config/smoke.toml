@@ -6,7 +6,7 @@ manifest_root = "manifests_smoke"
 
 [design]
 replicates = 1
-modes = [0, 1]
+modes = [0, 1, 2]
 cross_hgt_probabilities = [0.0]
 master_seed = 8675309
 
@@ -33,7 +33,7 @@ c_position = 6000
 d_position = 8500
 
 [experiment]
-generations = 10
+generations = [10]
 s_ab = 0.01
 s_cd = 0.015
 monitor_every = 5

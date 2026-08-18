@@ -5,7 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SLIM_BIN="${SLIM_BIN:-slim}"
 
 OUTDIR="" REF_FILE="" SEED=""
-GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN=""
+GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN="" HGT_CROSS=""
 N_ANCESTRAL="" N_CLADE="" N_TERMINAL=""
 ANCESTRAL_GENERATIONS="" DEEP_GENERATIONS="" TERMINAL_GENERATIONS=""
 A_POSITION="" B_POSITION="" C_POSITION="" D_POSITION=""
@@ -19,6 +19,7 @@ while [[ $# -gt 0 ]]; do
     --mu) MU="$2"; shift 2 ;;
     --tract-length) TRACT_LENGTH="$2"; shift 2 ;;
     --within-hgt) HGT_WITHIN="$2"; shift 2 ;;
+    --cross-hgt) HGT_CROSS="$2"; shift 2 ;;
     --ancestral-size) N_ANCESTRAL="$2"; shift 2 ;;
     --clade-size) N_CLADE="$2"; shift 2 ;;
     --terminal-size) N_TERMINAL="$2"; shift 2 ;;
@@ -33,7 +34,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS A_POSITION B_POSITION C_POSITION D_POSITION)
+required=(OUTDIR REF_FILE SEED GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN HGT_CROSS N_ANCESTRAL N_CLADE N_TERMINAL ANCESTRAL_GENERATIONS DEEP_GENERATIONS TERMINAL_GENERATIONS A_POSITION B_POSITION C_POSITION D_POSITION)
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
@@ -84,6 +85,7 @@ genome_length	$GENOME_LENGTH
 mutation_rate	$MU
 tract_length	$TRACT_LENGTH
 within_hgt_probability	$HGT_WITHIN
+cross_hgt_probability	$HGT_CROSS
 ancestral_size	$N_ANCESTRAL
 clade_size	$N_CLADE
 terminal_size	$N_TERMINAL
@@ -96,18 +98,18 @@ C_position	$C_POSITION
 D_position	$D_POSITION
 AB_distance	$((B_POSITION - A_POSITION))
 CD_distance	$((D_POSITION - C_POSITION))
-focal_seeding	balanced_16_haplotype_cycle
+focal_seeding	none_until_experimental_generation_0
 EOF
 
 "$SLIM_BIN" -s "$SEED" \
   -d "REF_FILE=\"$REF_FILE\"" \
   -d "CHECKPOINT_FILE=\"$TMPDIR_RUN/checkpoint.trees\"" \
-  -d "LOCI_FILE=\"$TMPDIR_RUN/selected_loci.tsv\"" \
   -d "METRICS_FILE=\"$TMPDIR_RUN/checkpoint_metrics.tsv\"" \
   -d "GENOME_LENGTH=$GENOME_LENGTH" \
   -d "MU=$MU" \
   -d "TRACT_LENGTH=$TRACT_LENGTH" \
   -d "HGT_P_WITHIN=$HGT_WITHIN" \
+  -d "HGT_P_CROSS=$HGT_CROSS" \
   -d "N_ANCESTRAL=$N_ANCESTRAL" \
   -d "N_CLADE=$N_CLADE" \
   -d "N_TERMINAL=$N_TERMINAL" \
@@ -122,12 +124,6 @@ EOF
   > "$TMPDIR_RUN/slim.log" 2>&1
 
 [[ -s "$TMPDIR_RUN/checkpoint.trees" ]] || { echo "Missing checkpoint.trees" >&2; exit 1; }
-python "$REPO_ROOT/scripts/validate_selected_loci.py" \
-  "$TMPDIR_RUN/selected_loci.tsv" \
-  --a-position "$A_POSITION" \
-  --b-position "$B_POSITION" \
-  --c-position "$C_POSITION" \
-  --d-position "$D_POSITION"
 [[ -s "$TMPDIR_RUN/checkpoint_metrics.tsv" ]] || { echo "Missing checkpoint metrics" >&2; exit 1; }
 
 touch "$TMPDIR_RUN/_SUCCESS"

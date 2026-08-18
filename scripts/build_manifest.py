@@ -16,6 +16,9 @@ from simflow import (
 )
 
 
+MODE_ACTIVE_PAIR = {0: "AB_and_CD_neutral", 1: "AB", 2: "CD"}
+
+
 def relative(path: Path) -> str:
     try:
         return path.relative_to(REPO_ROOT).as_posix()
@@ -48,73 +51,94 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     if focal_positions[1] - focal_positions[0] == focal_positions[3] - focal_positions[2]:
         raise ValueError("A-B and C-D distances must differ in this visualization design")
 
+    modes = [int(mode) for mode in design["modes"]]
+    if not modes or any(mode not in {0, 1, 2} for mode in modes):
+        raise ValueError("modes must contain only 0 (neutral), 1 (AB), and 2 (CD)")
+    raw_generations = experiment["generations"]
+    generations = (
+        [int(value) for value in raw_generations]
+        if isinstance(raw_generations, list)
+        else [int(raw_generations)]
+    )
+    if not generations or any(value < 1 for value in generations):
+        raise ValueError("experiment.generations must contain positive integers")
+    if len(set(generations)) != len(generations):
+        raise ValueError("experiment.generations contains duplicate durations")
+
     checkpoints: list[dict[str, object]] = []
     cases: list[dict[str, object]] = []
 
     for replicate in range(1, int(design["replicates"]) + 1):
         rep = f"rep_{replicate:04d}"
-        checkpoint_dir = checkpoint_root / rep
-        checkpoints.append(
-            {
-                "replicate": replicate,
-                "checkpoint_id": rep,
-                "seed": deterministic_seed(master_seed, "checkpoint", replicate),
-                "out_dir": relative(checkpoint_dir),
-                "reference": reference,
-                "genome_length": genome["length"],
-                "mutation_rate": genome["mutation_rate"],
-                "tract_length": genome["mean_hgt_tract"],
-                "within_hgt_probability": genome["within_hgt_probability"],
-                "ancestral_size": population["ancestral_size"],
-                "clade_size": population["clade_size"],
-                "terminal_size": population["terminal_size"],
-                "ancestral_generations": population["ancestral_generations"],
-                "deep_generations": population["deep_clade_generations"],
-                "terminal_generations": population["terminal_generations"],
-                "a_position": focal_positions[0],
-                "b_position": focal_positions[1],
-                "c_position": focal_positions[2],
-                "d_position": focal_positions[3],
-            }
-        )
-
         for cross_probability in design["cross_hgt_probabilities"]:
             cross_probability = float(cross_probability)
             cross_slug = probability_slug(cross_probability)
-            for mode in design["modes"]:
-                mode = int(mode)
-                case_id = f"{rep}__cross_{cross_slug}__mode_{mode}"
-                cases.append(
-                    {
-                        "case_id": case_id,
-                        "replicate": replicate,
-                        "checkpoint_id": rep,
-                        "checkpoint_dir": relative(checkpoint_dir),
-                        "out_dir": relative(run_root / rep / f"cross_{cross_slug}" / f"mode_{mode}"),
-                        "reference": reference,
-                        "mode": mode,
-                        "cross_hgt_probability": cross_probability,
-                        "seed": deterministic_seed(
-                            master_seed, "continuation", replicate, cross_probability, mode
-                        ),
-                        "genome_length": genome["length"],
-                        "mutation_rate": genome["mutation_rate"],
-                        "tract_length": genome["mean_hgt_tract"],
-                        "within_hgt_probability": genome["within_hgt_probability"],
-                        "terminal_size": population["terminal_size"],
-                        "sample_per_terminal": population["sample_per_terminal"],
-                        "experiment_generations": experiment["generations"],
-                        "s_ab": experiment["s_ab"],
-                        "s_cd": experiment["s_cd"],
-                        "monitor_every": experiment["monitor_every"],
-                        "ancestral_ne": postprocess["ancestral_ne"],
-                        "oracle_tree_position": postprocess["oracle_tree_position"],
-                        "a_position": focal_positions[0],
-                        "b_position": focal_positions[1],
-                        "c_position": focal_positions[2],
-                        "d_position": focal_positions[3],
-                    }
-                )
+            checkpoint_id = f"{rep}__cross_{cross_slug}"
+            checkpoint_dir = checkpoint_root / rep / f"cross_{cross_slug}"
+            checkpoints.append(
+                {
+                    "replicate": replicate,
+                    "checkpoint_id": checkpoint_id,
+                    "seed": deterministic_seed(master_seed, "checkpoint", replicate, cross_probability),
+                    "out_dir": relative(checkpoint_dir),
+                    "reference": reference,
+                    "genome_length": genome["length"],
+                    "mutation_rate": genome["mutation_rate"],
+                    "tract_length": genome["mean_hgt_tract"],
+                    "within_hgt_probability": genome["within_hgt_probability"],
+                    "cross_hgt_probability": cross_probability,
+                    "ancestral_size": population["ancestral_size"],
+                    "clade_size": population["clade_size"],
+                    "terminal_size": population["terminal_size"],
+                    "ancestral_generations": population["ancestral_generations"],
+                    "deep_generations": population["deep_clade_generations"],
+                    "terminal_generations": population["terminal_generations"],
+                    "a_position": focal_positions[0],
+                    "b_position": focal_positions[1],
+                    "c_position": focal_positions[2],
+                    "d_position": focal_positions[3],
+                }
+            )
+
+            for duration in generations:
+                duration_slug = f"gen_{duration:04d}"
+                for mode in modes:
+                    case_id = f"{rep}__cross_{cross_slug}__{duration_slug}__mode_{mode}"
+                    cases.append(
+                        {
+                            "case_id": case_id,
+                            "replicate": replicate,
+                            "checkpoint_id": checkpoint_id,
+                            "checkpoint_dir": relative(checkpoint_dir),
+                            "out_dir": relative(
+                                run_root / rep / f"cross_{cross_slug}" / duration_slug / f"mode_{mode}"
+                            ),
+                            "reference": reference,
+                            "mode": mode,
+                            "active_pair": MODE_ACTIVE_PAIR[mode],
+                            "cross_hgt_probability": cross_probability,
+                            "seed": deterministic_seed(
+                                master_seed, "continuation", replicate,
+                                cross_probability, duration, mode,
+                            ),
+                            "genome_length": genome["length"],
+                            "mutation_rate": genome["mutation_rate"],
+                            "tract_length": genome["mean_hgt_tract"],
+                            "within_hgt_probability": genome["within_hgt_probability"],
+                            "terminal_size": population["terminal_size"],
+                            "sample_per_terminal": population["sample_per_terminal"],
+                            "experiment_generations": duration,
+                            "s_ab": experiment["s_ab"],
+                            "s_cd": experiment["s_cd"],
+                            "monitor_every": experiment["monitor_every"],
+                            "ancestral_ne": postprocess["ancestral_ne"],
+                            "oracle_tree_position": postprocess["oracle_tree_position"],
+                            "a_position": focal_positions[0],
+                            "b_position": focal_positions[1],
+                            "c_position": focal_positions[2],
+                            "d_position": focal_positions[3],
+                        }
+                    )
 
     return checkpoints, cases
 

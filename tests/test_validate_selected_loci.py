@@ -16,6 +16,33 @@ HEADER = "label\tmutation_id\tposition\n"
 
 
 class SelectedLociValidationTests(unittest.TestCase):
+    def test_accepts_mode_specific_balanced_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected_loci.tsv"
+            path.write_text(
+                "label\tmutation_id\tposition\tseeded\tseeding_design\tglobal_frequency\n"
+                "A\t10\t10\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
+                "B\t11\t20\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
+                "C\tNA\t60\tfalse\tnot_seeded_for_mode\t0\n"
+                "D\tNA\t85\tfalse\tnot_seeded_for_mode\t0\n",
+                encoding="utf-8",
+            )
+            validate(path, mode=1)
+
+    def test_rejects_pair_inconsistent_with_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected_loci.tsv"
+            path.write_text(
+                "label\tmutation_id\tposition\tseeded\tseeding_design\tglobal_frequency\n"
+                "A\t10\t10\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
+                "B\t11\t20\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
+                "C\tNA\t60\tfalse\tnot_seeded_for_mode\t0\n"
+                "D\tNA\t85\tfalse\tnot_seeded_for_mode\t0\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "inconsistent with mode 2"):
+                validate(path, mode=2)
+
     def test_accepts_four_labels_with_blank_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "selected_loci.tsv"

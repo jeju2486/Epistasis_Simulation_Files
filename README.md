@@ -8,31 +8,33 @@ This repository is validation infrastructure; it is not part of the KOVAR runtim
 
 ## Scientific contrast
 
-Each replicate first builds one neutral, structured population and saves a checkpoint.
-The checkpoint is then continued through two matched arms:
+Each replicate and cross-HGT setting first builds one unseeded neutral, structured
+population and saves a checkpoint. Focal standing variation is introduced only at
+experimental generation 0, after which the checkpoint is continued through three arms:
 
 | Mode | Fitness model | Expected result |
 |---|---|---|
-| 0 | A, B, C and D remain neutral | No reproducible unlinked peak, apart from stochastic/physical LD |
-| 1 | A-B compatibility plus independent clade-aligned effects for C and D | SpydrPick detects A-B and C-D; KOVAR should retain A-B and demote C-D |
+| 0 | Balanced A-D seeding; all four loci remain neutral | No reproducible unlinked focal peak, apart from stochastic/physical LD |
+| 1 | Seed A-B only; apply A-B compatibility selection in every population | SpydrPick and KOVAR may detect the globally replicated A-B association |
+| 2 | Seed C-D only; apply independent clade-aligned effects to C and D | SpydrPick detects pooled lineage covariance; KOVAR should attenuate it when adjustment is effective |
 
 In Mode 1 the individual log-fitness contribution is
 
 ```text
--s_ab * I(A != B) + z_lineage * s_cd * (C + D)
+-s_ab * I(A != B)
 ```
 
-where `z_lineage=+1` for p1/p2 and `-1` for p3/p4. Therefore A-B has a
-non-zero interaction contrast, while C-D has no pairwise interaction:
+In Mode 2 it is
 
 ```text
-epsilon_AB = 2 * s_ab
-epsilon_CD = 0
+z_lineage * s_cd * (C + D)
 ```
 
-C-D is a false positive only relative to the target "repeated association beyond
-shared ancestry". It is genuinely marginally dependent after lineage-aligned
-selection.
+where `z_lineage=+1` for p1/p2 and `-1` for p3/p4. A-B has a non-zero
+interaction contrast (`epsilon_AB = 2*s_ab`). C-D has no pairwise interaction
+(`epsilon_CD = 0`) but becomes marginally dependent after pooling the two deep
+lineages. C-D is therefore not a literal marginal false positive; it is a
+lineage-generated association rather than the target globally replicated association.
 
 ## Population design
 
@@ -54,8 +56,9 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 - nucleotide mutation rate `2e-8` per site per generation;
 - 500 bp mean HGT tract;
 - within-lineage HGT probability 0.02 per offspring;
-- 5,000 experimental generations;
-- mode-1 coefficients `S_AB=0.003` and `S_CD=0.003`;
+- 10,000 ancestral, 10,000 deep-clade and 10,000 terminal-lineage neutral generations;
+- 300-generation and 400-generation focal assay endpoints;
+- coefficients `S_AB=0.003` and `S_CD=0.003` in their separate active modes;
 - cross-lineage HGT probabilities 0, 0.002 and 0.02.
 
 Cross-lineage values are probabilities, not `rho` values multiplied by genome
@@ -63,8 +66,7 @@ length. This removes the ambiguity in the older runner.
 
 ## Seeded standing variants A-D
 
-After demographic burn-in, each checkpoint receives four neutral nucleotide mutations
-at positions fixed before analysis:
+The neutral checkpoints protect four positions fixed before analysis:
 
 | Locus | Zero-based position |
 |---|---:|
@@ -77,13 +79,15 @@ Consequently A-B spans 10 kb and C-D spans 25 kb. Their unequal distances make t
 two truth pairs visually distinguishable, while both distances remain much larger than
 the 500 bp mean HGT tract.
 
-Within every terminal population, individuals are randomly ordered and assigned a
-cycle through all 16 four-locus haplotypes. With 2,500 individuals, every haplotype
-occurs 156 or 157 times per population, giving focal prevalences of approximately 0.5
-and negligible starting pairwise LD. Background mutation is disabled at the four focal
-positions, but HGT can transfer the focal alleles. The same seeded checkpoint supplies
-all matched Mode 0 and Mode 1 continuations. Neither SpydrPick nor KOVAR receives the
-truth labels or a restricted truth-pair list.
+At experimental generation 0, Mode 1 seeds `ab`, `Ab`, `aB` and `AB` at exactly
+25% each within every production terminal population. Mode 2 applies the same
+four-haplotype design to C-D. Mode 0 retains a neutral A-D control using the balanced
+16-haplotype cycle. Thus every seeded focal allele starts near frequency 0.5 and every
+active pair starts with negligible covariance. Inactive Mode 1/2 focal positions are
+recorded as `not_seeded_for_mode`. Background mutation is disabled at all four protected
+positions, but HGT can transfer seeded alleles during the assay. All modes for a given
+replicate and HGT setting start from the same unseeded checkpoint. Neither SpydrPick nor
+KOVAR receives truth labels or a restricted truth-pair list.
 
 ## Workflow
 
@@ -132,8 +136,9 @@ python scripts/run_manifest.py \
   --jobs 8
 ```
 
-For 50 replicates and three cross-lineage HGT values, the design runs 50 demographic
-checkpoints and 300 short continuations rather than 300 complete demographic simulations.
+For 50 replicates, three cross-lineage HGT values, two assay endpoints and three modes,
+the design runs 150 demographic checkpoints and 900 short continuations. Modes and
+endpoints within each replicate/HGT setting reuse the same neutral checkpoint.
 
 ### 5. Inspect status
 
@@ -146,9 +151,9 @@ treated as successful runs.
 
 ### Five replicates per setting
 
-The convenience launcher uses the full pilot parameters but limits the design to five
-matched replicates. With two modes and three cross-lineage HGT values, it creates five
-checkpoints and 30 continuations:
+The convenience launcher uses the full parameters but limits the design to five matched
+replicates. With three HGT values, two endpoints and three modes, it creates 15
+checkpoints and 90 continuations:
 
 ```bash
 micromamba activate epistasis-sim
@@ -170,7 +175,6 @@ Each checkpoint contains:
 
 ```text
 checkpoint.trees       resumable population and ancestry
-selected_loci.tsv      A-D mutation IDs, positions and frequencies
 checkpoint_metrics.tsv population sizes and differentiation diagnostics
 params.tsv              exact parameters and seed
 ```
@@ -183,7 +187,8 @@ out.vcf                 sampled haploid genotypes
 all_snps.fa             sampled SNP alignment
 core_snps.fa            alignment excluding A-D
 sample_names.tsv        VCF label, population and pedigree mapping
-monitor.tsv             time series for A-B and C-D
+selected_loci.tsv       mode-specific focal seeding, IDs, positions and frequencies
+monitor.tsv             A-B/C-D counts by absolute tick and experimental generation
 params.tsv              exact parameters and seed
 oracle_local_tree.nwk   local true-ancestry tree (diagnostic)
 ```
@@ -240,7 +245,8 @@ remain in `results/spydrpick_all_pairs/truth_pair_ranks.tsv`. If a selected locu
 is lost or fixed before sampling, its truth pair is retained with
 `candidate_status=locus_absent` rather than being misreported as a statistical
 failure. A sampled truth locus below the predeclared 5% MAF threshold is recorded
-separately as `maf_filtered`.
+separately as `maf_filtered`; a pair intentionally absent from Mode 1 or Mode 2 is
+recorded as `not_seeded`.
 
 ## KOVAR 0.8.1 analysis
 
@@ -319,12 +325,11 @@ It is restart-safe because successful stage directories are skipped.
 
 ## Cross-lineage HGT sensitivity
 
-All checkpoints are built with zero cross-lineage HGT. Values 0, 0.002 and 0.02 are
-applied only during the matched 5,000-generation continuation. This isolates the
-effect of subsequent mixing while holding the initial population structure fixed.
-
-A distinct future experiment would allow cross-lineage HGT throughout population
-formation; that design requires separate checkpoints for each HGT value.
+Values 0, 0.002 and 0.02 define separate complete evolutionary conditions. The assigned
+cross-HGT value begins after the first population split, remains active during the deep
+and terminal neutral phases, and continues unchanged through the focal assay. Each
+replicate therefore has one checkpoint per HGT value. Before the first split there is
+only one population, so all successful HGT donors are necessarily within-population.
 
 ## Validation
 

@@ -23,6 +23,7 @@ def checkpoint_command(row: dict[str, str]) -> list[str]:
         "--mu", row["mutation_rate"],
         "--tract-length", row["tract_length"],
         "--within-hgt", row["within_hgt_probability"],
+        "--cross-hgt", row["cross_hgt_probability"],
         "--ancestral-size", row["ancestral_size"],
         "--clade-size", row["clade_size"],
         "--terminal-size", row["terminal_size"],

@@ -16,13 +16,13 @@ command -v slim >/dev/null 2>&1 || {
 python scripts/prepare_inputs.py --config "$CONFIG"
 python scripts/build_manifest.py --config "$CONFIG"
 
-echo "Running 5 neutral checkpoints with $CHECKPOINT_JOBS parallel job(s)..."
+echo "Running 15 neutral replicate-by-HGT checkpoints with $CHECKPOINT_JOBS parallel job(s)..."
 python scripts/run_manifest.py \
   --manifest manifests/checkpoints.tsv \
   --stage checkpoint \
   --jobs "$CHECKPOINT_JOBS"
 
-echo "Running 30 paired continuations with $CASE_JOBS parallel job(s)..."
+echo "Running 90 matched duration-by-mode continuations with $CASE_JOBS parallel job(s)..."
 python scripts/run_manifest.py \
   --manifest manifests/cases.tsv \
   --stage case \

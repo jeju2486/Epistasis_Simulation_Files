@@ -1,12 +1,12 @@
 [paths]
 reference = "inputs/reference_100kb.fa"
-checkpoint_root = "checkpoints_100kb_seeded_mu2e8"
-run_root = "runs_100kb_seeded_mu2e8"
+checkpoint_root = "checkpoints_100kb_neutral30k_mu2e8"
+run_root = "runs_100kb_controlled_assay_mu2e8"
 manifest_root = "manifests"
 
 [design]
 replicates = 50
-modes = [0, 1]
+modes = [0, 1, 2]
 cross_hgt_probabilities = [0.0, 0.002, 0.02]
 master_seed = 20260809
 
@@ -22,9 +22,9 @@ ancestral_size = 10000
 clade_size = 5000
 terminal_size = 2500
 sample_per_terminal = 250
-ancestral_generations = 5000
-deep_clade_generations = 1000
-terminal_generations = 1000
+ancestral_generations = 10000
+deep_clade_generations = 10000
+terminal_generations = 10000
 
 [loci]
 a_position = 10000
@@ -33,10 +33,10 @@ c_position = 60000
 d_position = 85000
 
 [experiment]
-generations = 5000
+generations = [300, 400]
 s_ab = 0.003
 s_cd = 0.003
-monitor_every = 50
+monitor_every = 25
 
 [postprocess]
 ancestral_ne = 10000

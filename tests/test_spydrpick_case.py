@@ -78,6 +78,21 @@ class SpydrPickSummaryTests(unittest.TestCase):
                 rows = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(rows[0]["candidate_status"], "maf_filtered")
 
+    def test_inactive_mode_pair_is_labelled_not_seeded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.edges"
+            raw.write_text("1 2 1 1 0.9\n", encoding="utf-8")
+            compress_and_summarize(
+                raw, root / "edges.gz", root / "truth.tsv", [10, 20],
+                {"A": 10, "B": 20, "C": 30, "D": 40}, 2,
+                {10, 20}, {"A", "B"},
+            )
+            with (root / "truth.tsv").open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(rows[0]["candidate_status"], "eligible")
+            self.assertEqual(rows[1]["candidate_status"], "not_seeded")
+
 
 if __name__ == "__main__":
     unittest.main()

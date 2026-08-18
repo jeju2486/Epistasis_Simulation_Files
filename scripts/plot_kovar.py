@@ -9,12 +9,6 @@ import json
 import math
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-
 from plot_spydrpick import FOCAL_COLORS, eligible_positions, focal_pair_columns
 from simflow import read_tsv, repo_path
 
@@ -64,6 +58,12 @@ def kovar_points(
 
 
 def plot_case(case_dir: Path, case_id: str, result_name: str, max_background_points: int) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
     result = case_dir / result_name
     spydrpick = case_dir / "spydrpick_all_pairs"
     positions = eligible_positions(spydrpick / "eligible_loci.tsv")

@@ -1,5 +1,6 @@
-// Build a neutral four-lineage bacterial population and seed four balanced,
-// predeclared standing variants A-D at the checkpoint. Target: SLiM 5.2.
+// Build an unseeded neutral four-lineage bacterial population. Cross-population
+// HGT is active after population splitting, so each HGT setting receives its
+// own matched background checkpoint. Target: SLiM 5.2.
 
 initialize() {
     initializeSLiMModelType("nonWF");
@@ -10,29 +11,32 @@ initialize() {
 
     if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
     if (!exists("CHECKPOINT_FILE")) defineConstant("CHECKPOINT_FILE", "checkpoint.trees");
-    if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
     if (!exists("METRICS_FILE")) defineConstant("METRICS_FILE", "checkpoint_metrics.tsv");
 
     if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
     if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
+    if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);
 
     if (!exists("N_ANCESTRAL")) defineConstant("N_ANCESTRAL", 10000);
     if (!exists("N_CLADE")) defineConstant("N_CLADE", 5000);
     if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
-    if (!exists("ANCESTRAL_GENERATIONS")) defineConstant("ANCESTRAL_GENERATIONS", 5000);
-    if (!exists("DEEP_GENERATIONS")) defineConstant("DEEP_GENERATIONS", 1000);
-    if (!exists("TERMINAL_GENERATIONS")) defineConstant("TERMINAL_GENERATIONS", 1000);
+    if (!exists("ANCESTRAL_GENERATIONS")) defineConstant("ANCESTRAL_GENERATIONS", 10000);
+    if (!exists("DEEP_GENERATIONS")) defineConstant("DEEP_GENERATIONS", 10000);
+    if (!exists("TERMINAL_GENERATIONS")) defineConstant("TERMINAL_GENERATIONS", 10000);
 
     if (!exists("A_POSITION")) defineConstant("A_POSITION", 10000);
     if (!exists("B_POSITION")) defineConstant("B_POSITION", 20000);
     if (!exists("C_POSITION")) defineConstant("C_POSITION", 60000);
     if (!exists("D_POSITION")) defineConstant("D_POSITION", 85000);
 
-    defineConstant("DEEP_SPLIT_TICK", ANCESTRAL_GENERATIONS);
-    defineConstant("TERMINAL_SPLIT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);
-    defineConstant("CHECKPOINT_TICK", ANCESTRAL_GENERATIONS + DEEP_GENERATIONS + TERMINAL_GENERATIONS);
+    // p0 is created in early() at tick 1, after the nonWF reproduction stage.
+    // The +1 makes each configured phase contain exactly the requested number
+    // of completed reproductive generations.
+    defineConstant("DEEP_SPLIT_TICK", 1 + ANCESTRAL_GENERATIONS);
+    defineConstant("TERMINAL_SPLIT_TICK", 1 + ANCESTRAL_GENERATIONS + DEEP_GENERATIONS);
+    defineConstant("CHECKPOINT_TICK", 1 + ANCESTRAL_GENERATIONS + DEEP_GENERATIONS + TERMINAL_GENERATIONS);
 
     defineConstant("L", initializeAncestralNucleotides(REF_FILE));
     if (L != GENOME_LENGTH)
@@ -64,68 +68,7 @@ function (integer$) targetSize(o<Subpopulation>$ pop) {
     return N_TERMINAL;
 }
 
-function (object<Mutation>) seedStandingLoci(void) {
-    positions = c(A_POSITION, B_POSITION, C_POSITION, D_POSITION);
-    if ((size(unique(positions)) != 4) | any(positions != sort(positions)))
-        stop("A-D positions must be unique and ordered A < B < C < D.");
-    if ((positions[0] < 0) | (positions[3] >= L))
-        stop("A-D positions must lie within the genome.");
-    if ((B_POSITION - A_POSITION) == (D_POSITION - C_POSITION))
-        stop("A-B and C-D distances must differ in this design.");
-    existingPositions = sim.mutations.position;
-    if (any(existingPositions == A_POSITION) | any(existingPositions == B_POSITION) |
-        any(existingPositions == C_POSITION) | any(existingPositions == D_POSITION))
-        stop("A background mutation occurred at a protected focal position.");
-
-    // Randomize individuals within each terminal population, then cycle through
-    // all 16 four-locus haplotypes. With N=2500, every haplotype occurs 156 or
-    // 157 times per population; focal prevalences are therefore 0.4992-0.5000.
-    for (pop in sim.subpopulations) {
-        shuffled = sample(pop.individuals, pop.individualCount);
-        shuffled.tag = integerMod(seqAlong(shuffled), 16);
-    }
-
-    allIndividuals = sim.subpopulations.individuals;
-    divisors = c(1, 2, 4, 8);
-    for (i in 0:3) {
-        states = integerMod(asInteger(allIndividuals.tag / divisors[i]), 2);
-        carriers = allIndividuals[states == 1];
-        targets = carriers.haplosomesNonNull;
-        ancestral = sim.chromosome.ancestralNucleotides(positions[i], positions[i]);
-        derived = "A";
-        if (ancestral == "A")
-            derived = "C";
-        focal = targets[0].addNewMutation(m2, 0.0, positions[i],
-            originSubpop=NULL, nucleotide=derived);
-        if (size(targets) > 1)
-            targets[1:(size(targets) - 1)].addMutations(focal);
-    }
-    allIndividuals.tag = 0;
-
-    loci = sim.mutationsOfType(m2);
-    if (size(loci) != 4)
-        stop("Expected exactly four seeded focal mutations.");
-    return loci[order(loci.position)];
-}
-
-function (void) writeCheckpointMetrics(object<Mutation> loci) {
-    labels = c("A", "B", "C", "D");
-    fg = sim.mutationFrequencies(NULL, loci);
-    f1 = sim.mutationFrequencies(p1, loci);
-    f2 = sim.mutationFrequencies(p2, loci);
-    f3 = sim.mutationFrequencies(p3, loci);
-    f4 = sim.mutationFrequencies(p4, loci);
-
-    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeding_design\tglobal_frequency\tp1_frequency\tp2_frequency\tp3_frequency\tp4_frequency\n";
-    writeFile(LOCI_FILE, header, append=F);
-
-    for (i in 0:3) {
-        line = labels[i] + "\t" + loci[i].id + "\t" + loci[i].position + "\t" +
-               loci[i].nucleotide + "\tbalanced_16_haplotype_cycle\t" +
-               fg[i] + "\t" + f1[i] + "\t" + f2[i] + "\t" + f3[i] + "\t" + f4[i] + "\n";
-        writeFile(LOCI_FILE, line, append=T);
-    }
-
+function (void) writeCheckpointMetrics(void) {
     metrics = "metric\tvalue\n" +
               "tick\t" + community.tick + "\n" +
               "p1_size\t" + p1.individualCount + "\n" +
@@ -133,21 +76,15 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
               "p3_size\t" + p3.individualCount + "\n" +
               "p4_size\t" + p4.individualCount + "\n" +
               "background_mutation_count\t" + size(sim.mutationsOfType(m1)) + "\n" +
-              "seeded_mutation_count\t" + size(loci) + "\n" +
-              "seeding_design\tbalanced_16_haplotype_cycle\n" +
+              "seeded_mutation_count\t0\n" +
+              "cross_hgt_probability\t" + HGT_P_CROSS + "\n" +
+              "focal_seeding\tnone_until_experimental_generation_0\n" +
               "A_position\t" + A_POSITION + "\n" +
               "B_position\t" + B_POSITION + "\n" +
               "C_position\t" + C_POSITION + "\n" +
-              "D_position\t" + D_POSITION + "\n";
-
-    for (i in 0:2) {
-        for (j in (i + 1):3) {
-            distance = abs(loci[i].position - loci[j].position);
-            r2 = calcLD_Rsquared(loci[i], loci[j], haplosomes=sim.subpopulations.haplosomesNonNull);
-            metrics = metrics + "distance_" + labels[i] + labels[j] + "\t" + distance + "\n" +
-                      "r2_" + labels[i] + labels[j] + "\t" + r2 + "\n";
-        }
-    }
+              "D_position\t" + D_POSITION + "\n" +
+              "distance_AB\t" + (B_POSITION - A_POSITION) + "\n" +
+              "distance_CD\t" + (D_POSITION - C_POSITION) + "\n";
 
     writeFile(METRICS_FILE, metrics, append=F);
 }
@@ -156,22 +93,36 @@ function (void) writeCheckpointMetrics(object<Mutation> loci) {
 // removed in early(), producing non-overlapping haploid generations.
 reproduction() {
     for (rep in 0:1) {
-        if ((runif(1) < HGT_P_WITHIN) & (subpop.individualCount > 1)) {
+        u = runif(1);
+        donor = NULL;
+
+        if (size(sim.subpopulations) > 1) {
+            if (u < HGT_P_CROSS) {
+                otherPops = sim.subpopulations[sim.subpopulations != subpop];
+                donor = sample(otherPops.individuals, 1).haplosomes[0];
+            }
+            else if ((u < (HGT_P_CROSS + HGT_P_WITHIN)) & (subpop.individualCount > 1))
+                donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
+        }
+        else if ((u < HGT_P_WITHIN) & (subpop.individualCount > 1))
             donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
+
+        if (isNULL(donor))
+            subpop.addCloned(individual);
+        else {
             start = rdunif(1, 0, L - 1);
             tract = asInteger(max(1, rgeom(1, 1.0 / TRACT_LENGTH)));
             end = min(L - 1, start + tract - 1);
             subpop.addRecombinant(individual.haplosomes[0], donor, c(start, end),
                 NULL, NULL, NULL, randomizeStrands=F);
         }
-        else
-            subpop.addCloned(individual);
     }
 }
 
 1 early() {
-    if ((HGT_P_WITHIN < 0.0) | (HGT_P_WITHIN > 1.0))
-        stop("HGT_P_WITHIN must be between zero and one.");
+    if ((HGT_P_CROSS < 0.0) | (HGT_P_WITHIN < 0.0) |
+        ((HGT_P_CROSS + HGT_P_WITHIN) > 1.0))
+        stop("HGT probabilities must be non-negative and sum to at most one.");
     sim.addSubpop("p0", N_ANCESTRAL, haploid=T);
 }
 
@@ -227,8 +178,10 @@ TERMINAL_SPLIT_TICK late() {
 }
 
 CHECKPOINT_TICK late() {
-    loci = seedStandingLoci();
-    writeCheckpointMetrics(loci);
+    if (any(sim.mutations.position == A_POSITION) | any(sim.mutations.position == B_POSITION) |
+        any(sim.mutations.position == C_POSITION) | any(sim.mutations.position == D_POSITION))
+        stop("A background mutation occurred at a protected focal position.");
+    writeCheckpointMetrics();
     sim.treeSeqOutput(CHECKPOINT_FILE);
     sim.simulationFinished();
 }

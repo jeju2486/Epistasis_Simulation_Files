@@ -10,11 +10,6 @@ import math
 from itertools import combinations
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 from simflow import read_tsv, repo_path
 from spydrpick_case import parse_edge
 
@@ -84,6 +79,11 @@ def plot_case(
     result_name: str,
     max_background_points: int,
 ) -> list[dict[str, str]]:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     result = case_dir / result_name
     positions = eligible_positions(result / "eligible_loci.tsv")
     focal_columns = focal_pair_columns(case_dir / "selected_loci.tsv", positions)
@@ -139,7 +139,8 @@ def main() -> None:
     output = repo_path(args.output_dir or f"results/{result_name}")
     output.mkdir(parents=True, exist_ok=True)
     fields = [
-        "case_id", "replicate", "mode", "cross_hgt_probability", "pair", "candidate_status", "mi",
+        "case_id", "replicate", "mode", "active_pair", "cross_hgt_probability",
+        "experiment_generations", "pair", "candidate_status", "mi",
         "rank_min", "total_pairs", "rank_fraction", "u_column", "v_column",
         "u_position", "v_position", "physical_distance",
     ]

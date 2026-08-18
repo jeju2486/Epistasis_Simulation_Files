@@ -32,12 +32,17 @@ def read_positions(path: Path) -> tuple[list[int], dict[int, int]]:
     return positions, {position: column for column, position in enumerate(positions)}
 
 
-def read_truth(path: Path) -> dict[str, int]:
+def read_truth(path: Path) -> tuple[dict[str, int], set[str]]:
     with path.open(encoding="utf-8", newline="") as handle:
-        truth = {row["label"]: int(row["position"]) for row in csv.DictReader(handle, delimiter="\t")}
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    truth = {row["label"]: int(row["position"]) for row in rows}
     if set(truth) != {"A", "B", "C", "D"}:
         raise ValueError("selected_loci.tsv must contain exactly A, B, C and D")
-    return truth
+    seeded = {
+        row["label"] for row in rows
+        if row.get("seeded", "true").strip().lower() == "true"
+    }
+    return truth, seeded
 
 
 def parse_edge(line: str) -> tuple[int, int, int, int, float]:
@@ -55,12 +60,16 @@ def compress_and_summarize(
     truth: dict[str, int],
     n_loci: int,
     all_positions: set[int] | None = None,
+    seeded_labels: set[str] | None = None,
 ) -> dict[str, object]:
+    if seeded_labels is None:
+        seeded_labels = set(truth)
     position_to_column = {position: column for column, position in enumerate(positions)}
     targets = {
         tuple(sorted((truth[left], truth[right]))): left + right
         for left, right in TRUTH_PAIRS
-        if truth[left] in position_to_column and truth[right] in position_to_column
+        if left in seeded_labels and right in seeded_labels
+        and truth[left] in position_to_column and truth[right] in position_to_column
     }
     found: dict[str, dict[str, object]] = {}
     edge_count = 0
@@ -127,14 +136,20 @@ def compress_and_summarize(
                 row["total_pairs"] = edge_count
                 row["rank_fraction"] = float(row["rank_min"]) / edge_count
             else:
-                if truth[left] in position_to_column and truth[right] in position_to_column:
+                if left not in seeded_labels or right not in seeded_labels:
+                    status = "not_seeded"
+                else:
+                    both_sampled = (
+                        all_positions is not None
+                        and truth[left] in all_positions
+                        and truth[right] in all_positions
+                    )
+                    status = "maf_filtered" if both_sampled else "locus_absent"
+                if (
+                    left in seeded_labels and right in seeded_labels
+                    and truth[left] in position_to_column and truth[right] in position_to_column
+                ):
                     raise ValueError(f"eligible truth pair absent from all-pair output: {label}")
-                both_sampled = (
-                    all_positions is not None
-                    and truth[left] in all_positions
-                    and truth[right] in all_positions
-                )
-                status = "maf_filtered" if both_sampled else "locus_absent"
                 row = {
                     "pair": label, "candidate_status": status,
                     "u_column": position_to_column.get(truth[left], ""),
@@ -166,8 +181,8 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
         shutil.rmtree(output)
 
     all_positions, _original_position_to_column = read_positions(case_dir / "all_snps.positions.tsv")
-    truth = read_truth(case_dir / "selected_loci.tsv")
-    absent = sorted(set(truth.values()) - set(all_positions))
+    truth, seeded_labels = read_truth(case_dir / "selected_loci.tsv")
+    absent = sorted({truth[label] for label in seeded_labels} - set(all_positions))
     if absent:
         print(f"[warning] truth positions absent from sampled SNP alignment: {absent}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -202,7 +217,7 @@ def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweigh
             raise RuntimeError(f"expected one edges file, found {len(edges)}")
         metadata = compress_and_summarize(
             edges[0], temporary / "spydrpick.edges.gz", temporary / "truth_pairs.tsv",
-            positions, truth, len(positions), set(all_positions),
+            positions, truth, len(positions), set(all_positions), seeded_labels,
         )
         edges[0].unlink()
         metadata.update({

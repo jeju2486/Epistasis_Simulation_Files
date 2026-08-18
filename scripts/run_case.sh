@@ -43,6 +43,13 @@ for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
 
+case "$MODE" in
+  0) ACTIVE_PAIR="AB_and_CD_neutral"; SEEDING_DESIGN="balanced_16_haplotype_cycle" ;;
+  1) ACTIVE_PAIR="AB"; SEEDING_DESIGN="balanced_four_haplotype_cycle" ;;
+  2) ACTIVE_PAIR="CD"; SEEDING_DESIGN="balanced_four_haplotype_cycle" ;;
+  *) echo "Mode must be 0, 1 or 2: $MODE" >&2; exit 2 ;;
+esac
+
 [[ "$OUTDIR" = /* ]] || OUTDIR="$REPO_ROOT/$OUTDIR"
 [[ "$CHECKPOINT_DIR" = /* ]] || CHECKPOINT_DIR="$REPO_ROOT/$CHECKPOINT_DIR"
 [[ "$REF_FILE" = /* ]] || REF_FILE="$REPO_ROOT/$REF_FILE"
@@ -54,13 +61,6 @@ if [[ -f "$OUTDIR/_SUCCESS" ]]; then
   echo "[skip] case complete: $OUTDIR"
   exit 0
 fi
-
-LOCI_FILE="$CHECKPOINT_DIR/selected_loci.tsv"
-A_ID="$(awk -F '\t' '$1=="A" {print $2}' "$LOCI_FILE")"
-B_ID="$(awk -F '\t' '$1=="B" {print $2}' "$LOCI_FILE")"
-C_ID="$(awk -F '\t' '$1=="C" {print $2}' "$LOCI_FILE")"
-D_ID="$(awk -F '\t' '$1=="D" {print $2}' "$LOCI_FILE")"
-[[ -n "$A_ID" && -n "$B_ID" && -n "$C_ID" && -n "$D_ID" ]] || { echo "Could not parse A-D mutation IDs" >&2; exit 2; }
 
 mkdir -p "$(dirname "$OUTDIR")"
 LOCKDIR="${OUTDIR}.lock"
@@ -91,19 +91,17 @@ if [[ -e "$OUTDIR" ]]; then
   echo "[archive] moved incomplete output to $stale"
 fi
 
-cp "$LOCI_FILE" "$TMPDIR_RUN/selected_loci.tsv"
 cp "$CHECKPOINT_DIR/checkpoint_metrics.tsv" "$TMPDIR_RUN/checkpoint_metrics.tsv"
 
 cat > "$TMPDIR_RUN/params.tsv" <<EOF
 parameter	value
 seed	$SEED
 mode	$MODE
+active_pair	$ACTIVE_PAIR
 cross_hgt_probability	$CROSS_HGT
 checkpoint	$CHECKPOINT_DIR/checkpoint.trees
-A_mutation_id	$A_ID
-B_mutation_id	$B_ID
-C_mutation_id	$C_ID
-D_mutation_id	$D_ID
+focal_seeding	experimental_generation_0_mode_specific
+seeding_design	$SEEDING_DESIGN
 A_position	$A_POSITION
 B_position	$B_POSITION
 C_position	$C_POSITION
@@ -120,6 +118,7 @@ EOF
   -d "VCF_OUT=\"$TMPDIR_RUN/out.vcf\"" \
   -d "SAMPLE_FILE=\"$TMPDIR_RUN/sample_names.tsv\"" \
   -d "MONITOR_FILE=\"$TMPDIR_RUN/monitor.tsv\"" \
+  -d "LOCI_FILE=\"$TMPDIR_RUN/selected_loci.tsv\"" \
   -d "GENOME_LENGTH=$GENOME_LENGTH" \
   -d "MU=$MU" \
   -d "TRACT_LENGTH=$TRACT_LENGTH" \
@@ -132,16 +131,20 @@ EOF
   -d "MODE=$MODE" \
   -d "S_AB=$S_AB" \
   -d "S_CD=$S_CD" \
-  -d "A_ID=$A_ID" \
-  -d "B_ID=$B_ID" \
-  -d "C_ID=$C_ID" \
-  -d "D_ID=$D_ID" \
   -d "A_POSITION=$A_POSITION" \
   -d "B_POSITION=$B_POSITION" \
   -d "C_POSITION=$C_POSITION" \
   -d "D_POSITION=$D_POSITION" \
   "$REPO_ROOT/slim/continue_experiment.slim" \
   > "$TMPDIR_RUN/slim.log" 2>&1
+
+python "$REPO_ROOT/scripts/validate_selected_loci.py" \
+  "$TMPDIR_RUN/selected_loci.tsv" \
+  --mode "$MODE" \
+  --a-position "$A_POSITION" \
+  --b-position "$B_POSITION" \
+  --c-position "$C_POSITION" \
+  --d-position "$D_POSITION"
 
 python "$REPO_ROOT/scripts/vcf_to_fasta.py" \
   --vcf "$TMPDIR_RUN/out.vcf" \
@@ -164,7 +167,7 @@ python "$REPO_ROOT/scripts/export_oracle_tree.py" \
   --ancestral-ne "$ANCESTRAL_NE" \
   --seed "$SEED"
 
-for required_file in out.trees out.vcf sample_names.tsv monitor.tsv all_snps.fa core_snps.fa oracle_local_tree.nwk; do
+for required_file in out.trees out.vcf sample_names.tsv selected_loci.tsv monitor.tsv all_snps.fa core_snps.fa oracle_local_tree.nwk; do
   [[ -s "$TMPDIR_RUN/$required_file" ]] || { echo "Missing required output: $required_file" >&2; exit 1; }
 done
 
