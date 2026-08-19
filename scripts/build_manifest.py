@@ -64,6 +64,11 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
         raise ValueError("experiment.generations must contain positive integers")
     if len(set(generations)) != len(generations):
         raise ValueError("experiment.generations contains duplicate durations")
+    if len(generations) != 1:
+        raise ValueError(
+            "experiment.generations must contain exactly one duration; "
+            "case output paths no longer include a generation subdirectory"
+        )
 
     checkpoints: list[dict[str, object]] = []
     cases: list[dict[str, object]] = []
@@ -101,9 +106,8 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
             )
 
             for duration in generations:
-                duration_slug = f"gen_{duration:04d}"
                 for mode in modes:
-                    case_id = f"{rep}__cross_{cross_slug}__{duration_slug}__mode_{mode}"
+                    case_id = f"{rep}__cross_{cross_slug}__mode_{mode}"
                     cases.append(
                         {
                             "case_id": case_id,
@@ -111,7 +115,7 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                             "checkpoint_id": checkpoint_id,
                             "checkpoint_dir": relative(checkpoint_dir),
                             "out_dir": relative(
-                                run_root / rep / f"cross_{cross_slug}" / duration_slug / f"mode_{mode}"
+                                run_root / rep / f"cross_{cross_slug}" / f"mode_{mode}"
                             ),
                             "reference": reference,
                             "mode": mode,

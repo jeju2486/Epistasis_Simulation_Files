@@ -57,7 +57,7 @@ Default pilot values are defined in [`config/pilot.toml`](config/pilot.toml):
 - 500 bp mean HGT tract;
 - within-lineage HGT probability 0.02 per offspring;
 - 10,000 ancestral, 10,000 deep-clade and 10,000 terminal-lineage neutral generations;
-- 300-generation and 400-generation focal assay endpoints;
+- one 300-generation focal assay endpoint;
 - coefficients `S_AB=0.003` and `S_CD=0.003` in their separate active modes;
 - cross-lineage HGT probabilities 0, 0.002 and 0.02.
 
@@ -136,9 +136,11 @@ python scripts/run_manifest.py \
   --jobs 8
 ```
 
-For 50 replicates, three cross-lineage HGT values, two assay endpoints and three modes,
-the design runs 150 demographic checkpoints and 900 short continuations. Modes and
-endpoints within each replicate/HGT setting reuse the same neutral checkpoint.
+For 50 replicates, three cross-lineage HGT values and three modes, the design runs
+150 demographic checkpoints and 450 short continuations. Modes within each
+replicate/HGT setting reuse the same neutral checkpoint. Continuation directories are
+laid out as `rep_XXXX/cross_VALUE/mode_N`; the fixed 300-generation duration remains
+recorded in the manifest and per-case metadata rather than in a directory name.
 
 ### 5. Inspect status
 
@@ -152,8 +154,8 @@ treated as successful runs.
 ### Five replicates per setting
 
 The convenience launcher uses the full parameters but limits the design to five matched
-replicates. With three HGT values, two endpoints and three modes, it creates 15
-checkpoints and 90 continuations:
+replicates. With three HGT values and three modes, it creates 15 checkpoints and
+45 continuations:
 
 ```bash
 micromamba activate epistasis-sim

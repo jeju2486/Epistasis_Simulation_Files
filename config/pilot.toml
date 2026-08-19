@@ -33,7 +33,7 @@ c_position = 60000
 d_position = 85000
 
 [experiment]
-generations = [300, 400]
+generations = 300
 s_ab = 0.003
 s_cd = 0.003
 monitor_every = 25
