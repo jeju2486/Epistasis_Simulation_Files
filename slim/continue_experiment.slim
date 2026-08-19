@@ -84,20 +84,29 @@ function (object<Mutation>) seedFocalLoci(void) {
     activePositions = allPositions;
     divisors = c(1, 2, 4, 8);
     cycleSize = 16;
+    // Order each haplotype immediately before its bitwise complement.  Every
+    // complete pair therefore contributes one ancestral and one derived copy
+    // at every focal locus.  This keeps allele frequencies within one
+    // individual of 0.5 even when a stochastic nonWF population size is not
+    // divisible by the haplotype-cycle size.
+    haplotypeOrder = c(0, 15, 1, 14, 2, 13, 3, 12,
+                       4, 11, 5, 10, 6, 9, 7, 8);
     if (MODE == 1) {
         activePositions = c(A_POSITION, B_POSITION);
         divisors = c(1, 2);
         cycleSize = 4;
+        haplotypeOrder = c(0, 3, 1, 2);
     }
     else if (MODE == 2) {
         activePositions = c(C_POSITION, D_POSITION);
         divisors = c(1, 2);
         cycleSize = 4;
+        haplotypeOrder = c(0, 3, 1, 2);
     }
 
     for (pop in sim.subpopulations) {
         shuffled = sample(pop.individuals, pop.individualCount);
-        shuffled.tag = integerMod(seqAlong(shuffled), cycleSize);
+        shuffled.tag = haplotypeOrder[integerMod(seqAlong(shuffled), cycleSize)];
     }
 
     allIndividuals = sim.subpopulations.individuals;
