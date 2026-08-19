@@ -48,7 +48,7 @@ class ManifestTests(unittest.TestCase):
                 "d_position": 85,
             },
             "experiment": {
-                "generations": [10, 20],
+                "generations": 10,
                 "s_ab": 0.01,
                 "s_cd": 0.015,
                 "monitor_every": 2,
@@ -59,7 +59,7 @@ class ManifestTests(unittest.TestCase):
     def test_expansion_is_paired(self) -> None:
         checkpoints, cases = build(self.config)
         self.assertEqual(len(checkpoints), 6)
-        self.assertEqual(len(cases), 36)
+        self.assertEqual(len(cases), 18)
         self.assertEqual(
             {row["checkpoint_id"] for row in cases},
             {
@@ -70,7 +70,11 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual({row["mode"] for row in cases}, {0, 1, 2})
         self.assertEqual({row["active_pair"] for row in cases}, {"AB_and_CD_neutral", "AB", "CD"})
         self.assertEqual({row["cross_hgt_probability"] for row in cases}, {0.0, 0.002, 0.02})
-        self.assertEqual({row["experiment_generations"] for row in cases}, {10, 20})
+        self.assertEqual({row["experiment_generations"] for row in cases}, {10})
+        self.assertEqual(
+            cases[0]["out_dir"], "runs/rep_0001/cross_0/mode_0"
+        )
+        self.assertEqual(cases[0]["case_id"], "rep_0001__cross_0__mode_0")
         self.assertEqual(
             {row["cross_hgt_probability"] for row in checkpoints}, {0.0, 0.002, 0.02}
         )
@@ -80,6 +84,11 @@ class ManifestTests(unittest.TestCase):
     def test_equal_focal_pair_distances_are_rejected(self) -> None:
         self.config["loci"]["d_position"] = 70
         with self.assertRaisesRegex(ValueError, "distances must differ"):
+            build(self.config)
+
+    def test_multiple_assay_durations_are_rejected(self) -> None:
+        self.config["experiment"]["generations"] = [10, 20]
+        with self.assertRaisesRegex(ValueError, "exactly one duration"):
             build(self.config)
 
     def test_seeds_are_stable_and_unique(self) -> None:

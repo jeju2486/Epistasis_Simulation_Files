@@ -5,8 +5,8 @@ run_root = "runs_100kb_controlled_assay_mu2e8"
 manifest_root = "manifests"
 
 [design]
-# Five matched biological replicates for each duration x mode x cross-HGT setting.
-# This expands to 5 x 3 = 15 checkpoints and 5 x 3 x 2 x 3 = 90 continuations.
+# Five matched biological replicates for each mode x cross-HGT setting.
+# This expands to 5 x 3 = 15 checkpoints and 5 x 3 x 3 = 45 continuations.
 replicates = 5
 modes = [0, 1, 2]
 cross_hgt_probabilities = [0.0, 0.002, 0.02]
@@ -35,7 +35,7 @@ c_position = 60000
 d_position = 85000
 
 [experiment]
-generations = [300, 400]
+generations = 300
 s_ab = 0.003
 s_cd = 0.003
 monitor_every = 25
