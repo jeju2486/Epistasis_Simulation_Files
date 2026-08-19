@@ -73,6 +73,8 @@ def compress_and_summarize(
     }
     found: dict[str, dict[str, object]] = {}
     edge_count = 0
+    expected = n_loci * (n_loci - 1) // 2
+    seen_pairs = bytearray(expected)
     previous_mi = math.inf
     tie_start = 0
     tie_value: float | None = None
@@ -89,6 +91,13 @@ def compress_and_summarize(
             col1, col2 = raw1 - 1, raw2 - 1
             if not (0 <= col1 < n_loci and 0 <= col2 < n_loci):
                 raise ValueError(f"edge column outside the alignment: {raw1}, {raw2}")
+            if col1 == col2:
+                raise ValueError(f"self-pair in SpydrPick output: {raw1}, {raw2}")
+            low, high = sorted((col1, col2))
+            pair_index = low * (2 * n_loci - low - 1) // 2 + (high - low - 1)
+            if seen_pairs[pair_index]:
+                raise ValueError(f"duplicate pair in SpydrPick output: {raw1}, {raw2}")
+            seen_pairs[pair_index] = 1
             pos1, pos2 = positions[col1], positions[col2]
             distance = abs(pos2 - pos1)
             if mi > previous_mi + 1e-12:
@@ -115,12 +124,35 @@ def compress_and_summarize(
                     "rank_min": tie_start,
                 }
 
-    expected = n_loci * (n_loci - 1) // 2
+        # SpydrPick applies its edge threshold strictly, so --mi-threshold=0
+        # omits pairs whose MI is exactly zero. Restore those zero-valued pairs
+        # to keep the exhaustive candidate universe promised to KOVAR.
+        reported_pairs = edge_count
+        zero_rank_start = tie_start if tie_value == 0.0 else reported_pairs + 1
+        for col1 in range(n_loci):
+            for col2 in range(col1 + 1, n_loci):
+                pair_index = col1 * (2 * n_loci - col1 - 1) // 2 + (col2 - col1 - 1)
+                if seen_pairs[pair_index]:
+                    continue
+                pos1, pos2 = positions[col1], positions[col2]
+                destination.write(f"{col1} {col2} {abs(pos2 - pos1)} 0 0\n")
+                edge_count += 1
+                key = tuple(sorted((pos1, pos2)))
+                if key in targets:
+                    label = targets[key]
+                    found[label] = {
+                        "pair": label,
+                        "u_column": col1,
+                        "v_column": col2,
+                        "u_position": pos1,
+                        "v_position": pos2,
+                        "physical_distance": abs(pos2 - pos1),
+                        "mi": 0.0,
+                        "rank_min": zero_rank_start,
+                    }
+
     if edge_count != expected:
-        raise ValueError(
-            f"SpydrPick returned {edge_count} edges, but all {expected} pairs were expected; "
-            "the run is not an all-pair result"
-        )
+        raise AssertionError(f"restored {edge_count} pairs, expected {expected}")
     with truth_output.open("w", encoding="utf-8", newline="") as handle:
         fields = [
             "pair", "candidate_status", "u_column", "v_column", "u_position", "v_position",
@@ -160,7 +192,12 @@ def compress_and_summarize(
                     "rank_fraction": "",
                 }
             writer.writerow(row)
-    return {"n_loci": n_loci, "n_pairs": edge_count}
+    return {
+        "n_loci": n_loci,
+        "n_pairs": edge_count,
+        "spydrpick_reported_pairs": reported_pairs,
+        "zero_mi_pairs_restored": edge_count - reported_pairs,
+    }
 
 
 def run_case(case_dir: Path, executable: str, threads: int, force: bool, unweighted: bool, min_maf: float) -> None:

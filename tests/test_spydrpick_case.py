@@ -39,16 +39,40 @@ class SpydrPickSummaryTests(unittest.TestCase):
             self.assertEqual(len(normalized), 6)
             self.assertEqual(normalized[0].split()[:3], ["0", "1", "10"])
 
-    def test_missing_pair_is_rejected(self) -> None:
+    def test_zero_mi_pairs_omitted_by_spydrpick_are_restored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw.edges"
             raw.write_text("1 2 1 1 0.9\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "all 3 pairs"):
+            metadata = compress_and_summarize(
+                raw, root / "edges.gz", root / "truth.tsv",
+                [10, 20, 30],
+                {"A": 10, "B": 20, "C": 20, "D": 30}, 3,
+            )
+            self.assertEqual(metadata["n_pairs"], 3)
+            self.assertEqual(metadata["spydrpick_reported_pairs"], 1)
+            self.assertEqual(metadata["zero_mi_pairs_restored"], 2)
+            with gzip.open(root / "edges.gz", "rt", encoding="utf-8") as handle:
+                normalized = handle.readlines()
+            self.assertEqual(len(normalized), 3)
+            self.assertEqual(normalized[1].split(), ["0", "2", "20", "0", "0"])
+            self.assertEqual(normalized[2].split(), ["1", "2", "10", "0", "0"])
+            with (root / "truth.tsv").open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(rows[1]["pair"], "CD")
+            self.assertEqual(rows[1]["candidate_status"], "eligible")
+            self.assertEqual(rows[1]["mi"], "0.0")
+            self.assertEqual(rows[1]["rank_min"], "2")
+
+    def test_duplicate_pair_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.edges"
+            raw.write_text("1 2 1 1 0.9\n2 1 1 1 0.8\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate pair"):
                 compress_and_summarize(
                     raw, root / "edges.gz", root / "truth.tsv",
-                    [10, 20, 30],
-                    {"A": 10, "B": 20, "C": 20, "D": 30}, 3,
+                    [10, 20], {"A": 10, "B": 20, "C": 10, "D": 20}, 2,
                 )
 
     def test_absent_truth_locus_is_labelled(self) -> None:

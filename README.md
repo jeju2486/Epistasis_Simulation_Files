@@ -218,7 +218,9 @@ This example runs two cases concurrently and gives each SpydrPick process four
 threads, for at most eight compute threads. Before pair construction, the shared
 binary matrix is filtered at `MAF >= 0.05`. The runner then uses `--mi-threshold=0`,
 `--no-aracne`, and `--no-filter-alignment` on that already-filtered matrix and
-verifies that the output contains exactly `L(L-1)/2` pairs. Default SpydrPick sample reweighting is retained for the
+restores pairs with exactly zero MI that SpydrPick omits at this strict threshold. The
+normalized output is then verified to contain exactly `L(L-1)/2` pairs. Default
+SpydrPick sample reweighting is retained for the
 primary comparison. SpydrPick and KOVAR receive the exact same binary A/C matrix:
 reference state is absence and any non-reference state is presence. Because the
 packaged SpydrPick 1.2.0 executable does not support
