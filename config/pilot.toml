@@ -1,14 +1,13 @@
 [paths]
 reference = "inputs/reference_100kb.fa"
-checkpoint_root = "checkpoints_100kb_neutral30k_mu2e8"
-run_root = "runs_100kb_controlled_assay_mu2e8"
-manifest_root = "manifests"
+checkpoint_root = "checkpoints_100kb_neutral10k_mu2e8_pilot"
+run_root = "runs_100kb_frequency_dependent_mu2e8_pilot"
+manifest_root = "manifests_pilot"
 
 [design]
-replicates = 50
-modes = [0, 1, 2]
-cross_hgt_probabilities = [0.0, 0.002, 0.02]
-master_seed = 20260809
+replicates = 1
+modes = [1, 2]
+master_seed = 20260901
 
 [genome]
 length = 100000
@@ -22,22 +21,18 @@ ancestral_size = 10000
 clade_size = 5000
 terminal_size = 2500
 sample_per_terminal = 250
-ancestral_generations = 10000
-deep_clade_generations = 10000
-terminal_generations = 10000
+deep_split_tick = 5000
+terminal_split_tick = 10000
+end_tick = 30000
 
 [loci]
 a_position = 10000
-b_position = 20000
-c_position = 60000
-d_position = 85000
+b_position = 50000
 
-[experiment]
-generations = 300
-s_ab = 0.003
-s_cd = 0.003
-monitor_every = 25
+[frequency_dependence]
+strength = 0.25
+epsilon = 0.0002
 
 [postprocess]
 ancestral_ne = 10000
-oracle_tree_position = 50000
+tree_position = 90000

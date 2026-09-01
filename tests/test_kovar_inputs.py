@@ -6,12 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from kovar_inputs import (  # noqa: E402
-    materialize_pairs,
-    write_binary_fasta,
-    write_maf_filtered_binary_fasta,
-)
+from kovar_inputs import materialize_pairs, write_binary_fasta, write_maf_filtered_binary_fasta  # noqa: E402
 from run_kovar_case import require  # noqa: E402
 
 
@@ -25,46 +22,32 @@ class KovarInputTests(unittest.TestCase):
     def test_binary_encoding_uses_vcf_reference_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fasta = root / "all.fa"
-            positions = root / "positions.tsv"
-            output = root / "binary.fa"
+            fasta, positions, output = root / "all.fa", root / "positions.tsv", root / "binary.fa"
             fasta.write_text(">s1\nATG\n>s2\nGCA\n", encoding="utf-8")
-            positions.write_text(
-                "alignment_column\tchrom\tvcf_position\tvariant_id\talleles\n"
-                "0\t1\t10\t.\tA,G\n1\t1\t20\t.\tC,T\n2\t1\t30\t.\tG,A\n",
-                encoding="utf-8",
-            )
+            positions.write_text("alignment_column\tchrom\tvcf_position\tvariant_id\talleles\n"
+                                 "0\t1\t10\t.\tA,G\n1\t1\t20\t.\tC,T\n2\t1\t30\t.\tG,A\n", encoding="utf-8")
             self.assertEqual(write_binary_fasta(fasta, positions, output), (2, 3))
             self.assertEqual(output.read_text(encoding="utf-8"), ">s1\nACA\n>s2\nCAC\n")
 
-    def test_pair_materialization_and_diagnostic_limit(self) -> None:
+    def test_pair_materialization_is_canonical_uv_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / "pairs.gz"
+            source, output = root / "pairs.gz", root / "pairs.tsv"
             with gzip.open(source, "wt", encoding="utf-8") as handle:
-                handle.write("0 2 100 1 0.8\n1 3 200 1 0.7\n")
-            output = root / "pairs.tsv"
-            self.assertEqual(materialize_pairs(source, output, max_pairs=1), 1)
-            self.assertEqual(output.read_text(encoding="utf-8"), "0 2 100 1 0.8\n")
+                handle.write("2 0 100 0 0.8\n1 3 200 0 0.7\n")
+            self.assertEqual(materialize_pairs(source, output), 2)
+            self.assertEqual(output.read_text(encoding="utf-8"), "u\tv\n0\t2\n1\t3\n")
 
     def test_maf_filter_writes_shared_locus_mapping(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fasta = root / "all.fa"
-            positions = root / "positions.tsv"
-            output = root / "filtered.fa"
-            mapping = root / "eligible.tsv"
+            fasta, positions = root / "all.fa", root / "positions.tsv"
+            output, mapping = root / "filtered.fa", root / "eligible.tsv"
             fasta.write_text(">s1\nAAA\n>s2\nCAA\n>s3\nCCA\n>s4\nCCA\n", encoding="utf-8")
-            positions.write_text(
-                "alignment_column\tchrom\tvcf_position\tvariant_id\talleles\n"
-                "0\t1\t10\t.\tA,C\n1\t1\t20\t.\tA,C\n2\t1\t30\t.\tA,C\n",
-                encoding="utf-8",
-            )
-            result = write_maf_filtered_binary_fasta(
-                fasta, positions, output, mapping, min_maf=0.25
-            )
-            self.assertEqual(result, (4, 3, 2))
-            self.assertEqual(output.read_text(encoding="utf-8"), ">s1\nAA\n>s2\nCA\n>s3\nCC\n>s4\nCC\n")
+            positions.write_text("alignment_column\tchrom\tvcf_position\tvariant_id\talleles\n"
+                                 "0\t1\t10\t.\tA,C\n1\t1\t20\t.\tA,C\n2\t1\t30\t.\tA,C\n", encoding="utf-8")
+            self.assertEqual(write_maf_filtered_binary_fasta(
+                fasta, positions, output, mapping, min_maf=0.25), (4, 3, 2))
             self.assertIn("0\t0\t9\t0.75\t0.25", mapping.read_text(encoding="utf-8"))
 
 

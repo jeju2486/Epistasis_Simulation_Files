@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Export one labelled local true-ancestry tree from a SLiM tree sequence.
-
-This is deliberately an oracle diagnostic, not the realistic primary tree.
-"""
+"""Export the predeclared neutral local genealogy used by the benchmark."""
 
 from __future__ import annotations
 
@@ -94,7 +91,7 @@ def export(
     focal_position = min(max(0.0, position), simplified.sequence_length - 1e-9)
     tree = simplified.at(focal_position)
     if tree.num_roots != 1:
-        raise ValueError(f"Oracle tree has {tree.num_roots} roots after recapitation")
+        raise ValueError(f"Local tree has {tree.num_roots} roots after recapitation")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(tree.as_newick(node_labels=node_labels) + "\n", encoding="utf-8")
@@ -118,7 +115,7 @@ def main() -> None:
         args.ancestral_ne,
         args.seed,
     )
-    print(f"[done] wrote oracle local tree with {count} tips to {args.output}")
+    print(f"[done] wrote local simulation tree with {count} tips to {args.output}")
 
 
 if __name__ == "__main__":

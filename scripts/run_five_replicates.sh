@@ -2,30 +2,24 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG="$REPO_ROOT/config/five_replicates.toml"
-CHECKPOINT_JOBS="${CHECKPOINT_JOBS:-2}"
-CASE_JOBS="${CASE_JOBS:-6}"
+CONFIG="${CONFIG:-config/five_replicates.toml}"
+CHECKPOINT_JOBS="${CHECKPOINT_JOBS:-5}"
+CASE_JOBS="${CASE_JOBS:-5}"
 
 cd "$REPO_ROOT"
-
 command -v slim >/dev/null 2>&1 || {
   echo "SLiM is not available. Activate the epistasis-sim environment first." >&2
   exit 2
 }
-
-python scripts/prepare_inputs.py --config "$CONFIG"
-python scripts/build_manifest.py --config "$CONFIG"
-
-echo "Running 15 neutral replicate-by-HGT checkpoints with $CHECKPOINT_JOBS parallel job(s)..."
-python scripts/run_manifest.py \
-  --manifest manifests/checkpoints.tsv \
-  --stage checkpoint \
-  --jobs "$CHECKPOINT_JOBS"
-
-echo "Running 90 matched duration-by-mode continuations with $CASE_JOBS parallel job(s)..."
-python scripts/run_manifest.py \
-  --manifest manifests/cases.tsv \
-  --stage case \
-  --jobs "$CASE_JOBS"
-
-python scripts/show_status.py manifests/checkpoints.tsv manifests/cases.tsv
+python3 scripts/prepare_inputs.py --config "$CONFIG"
+python3 scripts/build_manifest.py --config "$CONFIG"
+MANIFEST_ROOT="$(python3 -c 'import sys,tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["paths"]["manifest_root"])' "$CONFIG")"
+CHECKPOINT_MANIFEST="$MANIFEST_ROOT/checkpoints.tsv"
+CASE_MANIFEST="$MANIFEST_ROOT/cases.tsv"
+echo "Running neutral checkpoints with $CHECKPOINT_JOBS parallel job(s)..."
+python3 scripts/run_manifest.py --manifest "$CHECKPOINT_MANIFEST" \
+  --stage checkpoint --jobs "$CHECKPOINT_JOBS"
+echo "Running frequency-dependent cases with $CASE_JOBS parallel job(s)..."
+python3 scripts/run_manifest.py --manifest "$CASE_MANIFEST" \
+  --stage case --jobs "$CASE_JOBS"
+python3 scripts/show_status.py "$CHECKPOINT_MANIFEST" "$CASE_MANIFEST"

@@ -8,83 +8,31 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
-
 from validate_selected_loci import validate  # noqa: E402
 
 
-HEADER = "label\tmutation_id\tposition\n"
-
-
 class SelectedLociValidationTests(unittest.TestCase):
-    def test_accepts_mode_specific_balanced_pair(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(
-                "label\tmutation_id\tposition\tseeded\tseeding_design\tglobal_frequency\n"
-                "A\t10\t10\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
-                "B\t11\t20\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
-                "C\tNA\t60\tfalse\tnot_seeded_for_mode\t0\n"
-                "D\tNA\t85\tfalse\tnot_seeded_for_mode\t0\n",
-                encoding="utf-8",
-            )
-            validate(path, mode=1)
+    def write(self, root: Path, a_frequency: float = 0.5, labels=("A", "B")) -> Path:
+        path = root / "selected_loci.tsv"
+        rows = ["label\tmutation_id\tposition\tseeded_frequency\tmode"]
+        values = {"A": (10, 10, a_frequency), "B": (11, 50, 0.5), "C": (12, 70, 0.5)}
+        rows.extend(f"{label}\t{values[label][0]}\t{values[label][1]}\t{values[label][2]}\t1" for label in labels)
+        path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        return path
 
-    def test_rejects_pair_inconsistent_with_mode(self) -> None:
+    def test_accepts_two_balanced_loci(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(
-                "label\tmutation_id\tposition\tseeded\tseeding_design\tglobal_frequency\n"
-                "A\t10\t10\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
-                "B\t11\t20\ttrue\tbalanced_four_haplotype_cycle\t0.5\n"
-                "C\tNA\t60\tfalse\tnot_seeded_for_mode\t0\n"
-                "D\tNA\t85\tfalse\tnot_seeded_for_mode\t0\n",
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "inconsistent with mode 2"):
-                validate(path, mode=2)
+            validate(self.write(Path(directory)), {"A": 10, "B": 50}, mode=1)
 
-    def test_accepts_four_labels_with_blank_records(self) -> None:
+    def test_rejects_extra_or_missing_label(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(
-                HEADER + "\nA\t1\t10\n\nB\t2\t20\n\nC\t3\t30\n\nD\t4\t40\n",
-                encoding="utf-8",
-            )
-            validate(path)
-
-    def test_rejects_duplicate_and_missing_labels(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(HEADER + "A\t1\t10\nB\t2\t20\nC\t3\t30\nC\t4\t40\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "exactly one record"):
-                validate(path)
-
-    def test_validates_predeclared_positions(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(
-                HEADER + "A\t1\t10\nB\t2\t20\nC\t3\t60\nD\t4\t85\n",
-                encoding="utf-8",
-            )
-            expected = {"A": 10, "B": 20, "C": 60, "D": 85}
-            validate(path, expected)
-            expected["D"] = 86
-            with self.assertRaisesRegex(ValueError, "expected 86"):
-                validate(path, expected)
+            with self.assertRaisesRegex(ValueError, "exactly one A and one B"):
+                validate(self.write(Path(directory), labels=("A", "B", "C")))
 
     def test_rejects_unbalanced_seed_frequency(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "selected_loci.tsv"
-            path.write_text(
-                "label\tmutation_id\tposition\tseeding_design\tglobal_frequency\n"
-                "A\t1\t10\tbalanced_16_haplotype_cycle\t0.8\n"
-                "B\t2\t20\tbalanced_16_haplotype_cycle\t0.5\n"
-                "C\t3\t60\tbalanced_16_haplotype_cycle\t0.5\n"
-                "D\t4\t85\tbalanced_16_haplotype_cycle\t0.5\n",
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "unbalanced initial"):
-                validate(path)
+            with self.assertRaisesRegex(ValueError, "unbalanced"):
+                validate(self.write(Path(directory), a_frequency=0.6))
 
 
 if __name__ == "__main__":

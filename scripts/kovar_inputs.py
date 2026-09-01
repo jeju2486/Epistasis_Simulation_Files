@@ -126,30 +126,36 @@ def write_maf_filtered_binary_fasta(
     return n_samples, expected_length, len(retained)
 
 
-def materialize_pairs(source: Path, output: Path, max_pairs: int = 0) -> int:
-    if max_pairs < 0:
-        raise ValueError("max_pairs must be non-negative")
-    count = 0
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(source, "rt", encoding="utf-8") as reader, output.open(
-        "w", encoding="utf-8", newline="\n"
-    ) as writer:
+def materialize_pairs(source: Path, output: Path) -> int:
+    """Write all unique canonical pairs using only KOVAR's u/v contract."""
+    pairs: set[tuple[int, int]] = set()
+    previous_mi = float("inf")
+    with gzip.open(source, "rt", encoding="utf-8") as reader:
         for line in reader:
             if not line.strip():
                 continue
             fields = line.split()
             if len(fields) < 5:
                 raise ValueError(f"invalid SpydrPick pair row: {line.rstrip()}")
-            u, v = int(fields[0]), int(fields[1])
-            if u < 0 or v < 0 or u == v:
-                raise ValueError(f"invalid KOVAR pair: {u}, {v}")
-            writer.write(" ".join(fields[:5]) + "\n")
-            count += 1
-            if max_pairs and count >= max_pairs:
-                break
-    if count == 0:
+            raw_u, raw_v, mi = int(fields[0]), int(fields[1]), float(fields[4])
+            if raw_u < 0 or raw_v < 0 or raw_u == raw_v:
+                raise ValueError(f"invalid KOVAR pair: {raw_u}, {raw_v}")
+            if mi > previous_mi + 1e-12:
+                raise ValueError("SpydrPick pairs are not sorted by descending MI")
+            previous_mi = mi
+            pair = tuple(sorted((raw_u, raw_v)))
+            if pair in pairs:
+                raise ValueError(f"duplicate unordered SpydrPick pair: {pair}")
+            pairs.add(pair)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="\n") as writer:
+        writer.write("u\tv\n")
+        for u, v in sorted(pairs):
+            writer.write(f"{u}\t{v}\n")
+    if not pairs:
         raise ValueError(f"no pairs found in {source}")
-    return count
+    return len(pairs)
 
 
 def main() -> None:
@@ -159,10 +165,9 @@ def main() -> None:
     parser.add_argument("--binary-output", required=True, type=Path)
     parser.add_argument("--pairs-gz", required=True, type=Path)
     parser.add_argument("--pairs-output", required=True, type=Path)
-    parser.add_argument("--max-pairs", type=int, default=0)
     args = parser.parse_args()
     samples, loci = write_binary_fasta(args.alignment, args.positions, args.binary_output)
-    pairs = materialize_pairs(args.pairs_gz, args.pairs_output, args.max_pairs)
+    pairs = materialize_pairs(args.pairs_gz, args.pairs_output)
     print(f"[done] KOVAR inputs: samples={samples} loci={loci} pairs={pairs}")
 
 
