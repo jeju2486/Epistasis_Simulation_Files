@@ -161,16 +161,22 @@ function (float$) writeMonitor(void) {
 
 function (void) writeEquilibriumStatus(string$ status, float$ maximumDeviation) {
     elapsed = community.tick - asInteger(sim.getValue("start_tick"));
-    text = "status\tsampling_tick\telapsed_ticks\tmode\tcross_hgt_probability\tmax_abs_deviation\ttolerance\tstable_checks\trequired_stable_checks\n" +
-           status + "\t" + community.tick + "\t" + elapsed + "\t" + MODE + "\t" +
-           HGT_P_CROSS + "\t" + maximumDeviation + "\t" + EQUILIBRIUM_TOLERANCE +
+    firstEquilibriumTick = "NA";
+    if (!isNULL(sim.getValue("first_equilibrium_tick")))
+        firstEquilibriumTick = asString(sim.getValue("first_equilibrium_tick"));
+    text = "status\tsampling_tick\telapsed_ticks\tfirst_equilibrium_tick\tmode\tcross_hgt_probability\tmax_abs_deviation\ttolerance\tstable_checks\trequired_stable_checks\n" +
+           status + "\t" + community.tick + "\t" + elapsed + "\t" + firstEquilibriumTick + "\t" +
+           MODE + "\t" + HGT_P_CROSS + "\t" + maximumDeviation + "\t" + EQUILIBRIUM_TOLERANCE +
            "\t" + sim.getValue("stable_checks") + "\t" + EQUILIBRIUM_STABLE_CHECKS + "\n";
     writeFile(EQUILIBRIUM_FILE, text, append=F);
 }
 
 function (void) finishRun(float$ maximumDeviation) {
     writeEndpoint();
-    writeEquilibriumStatus("equilibrium", maximumDeviation);
+    status = "not_reached_by_sampling";
+    if (!isNULL(sim.getValue("first_equilibrium_tick")))
+        status = "equilibrium_reached";
+    writeEquilibriumStatus(status, maximumDeviation);
     sampled = NULL;
     for (pop in sim.subpopulations) {
         draw = pop.sampleIndividuals(min(SAMPLE_PER_TERMINAL, pop.individualCount));
@@ -285,16 +291,14 @@ s3 2 late() {
             stableChecks = 0;
         sim.setValue("stable_checks", stableChecks);
         sim.setValue("last_maximum_deviation", maximumDeviation);
-        if (stableChecks >= EQUILIBRIUM_STABLE_CHECKS) {
-            finishRun(maximumDeviation);
-            return;
-        }
+        if ((stableChecks >= EQUILIBRIUM_STABLE_CHECKS) &
+            isNULL(sim.getValue("first_equilibrium_tick")))
+            sim.setValue("first_equilibrium_tick", community.tick);
     }
     if (community.tick >= END_TICK) {
         maximumDeviation = 1.0;
         if (!isNULL(sim.getValue("last_maximum_deviation")))
             maximumDeviation = asFloat(sim.getValue("last_maximum_deviation"));
-        writeEquilibriumStatus("failed_to_reach_equilibrium", maximumDeviation);
-        stop("Equilibrium was not reached before END_TICK.");
+        finishRun(maximumDeviation);
     }
 }

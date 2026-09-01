@@ -52,5 +52,6 @@ python3 scripts/run_kovar_manifest.py --manifest "$CASE_MANIFEST" \
   --jobs "$KOVAR_JOBS" --threads-per-case "$KOVAR_THREADS_PER_CASE" \
   --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
 python3 scripts/plot_kovar.py --manifest "$CASE_MANIFEST"
+python3 scripts/evaluate_lineage_confounding.py --manifest "$CASE_MANIFEST"
 
-echo "[done] five replicates x three modes x three cross-HGT rates: SLiM -> SpydrPick -> KOVAR 0.8.3 -> plots"
+echo "[done] five replicates x three modes x three cross-HGT rates: SLiM -> SpydrPick -> KOVAR 0.8.3 -> lineage evaluation"

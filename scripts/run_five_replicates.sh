@@ -19,7 +19,7 @@ CASE_MANIFEST="$MANIFEST_ROOT/cases.tsv"
 echo "Running neutral checkpoints with $CHECKPOINT_JOBS parallel job(s)..."
 python3 scripts/run_manifest.py --manifest "$CHECKPOINT_MANIFEST" \
   --stage checkpoint --jobs "$CHECKPOINT_JOBS"
-echo "Running 45 mode-by-cross-HGT cases with $CASE_JOBS parallel job(s)..."
+echo "Running mode-by-cross-HGT cases with $CASE_JOBS parallel job(s)..."
 python3 scripts/run_manifest.py --manifest "$CASE_MANIFEST" \
   --stage case --jobs "$CASE_JOBS"
 python3 scripts/show_status.py "$CHECKPOINT_MANIFEST" "$CASE_MANIFEST"

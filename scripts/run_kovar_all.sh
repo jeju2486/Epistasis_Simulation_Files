@@ -16,3 +16,4 @@ python3 scripts/run_kovar_manifest.py --manifest "$MANIFEST" \
   --jobs "$JOBS" --threads-per-case "$THREADS_PER_CASE" \
   --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
 python3 scripts/plot_kovar.py --manifest "$MANIFEST"
+python3 scripts/evaluate_lineage_confounding.py --manifest "$MANIFEST"

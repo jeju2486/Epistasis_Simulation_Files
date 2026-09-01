@@ -1,8 +1,9 @@
 # Global-frequency SLiM–SpydrPick–KOVAR benchmark
 
-This repository benchmarks whether KOVAR 0.8.3 can distinguish a planted global
-two-locus association from bacterial population structure. SpydrPick is retained
-as a fast, unadjusted covariation analysis for supplementary comparison.
+This repository tests two separate claims: SpydrPick and KOVAR 0.8.3 should both
+detect a planted global two-locus association, while KOVAR should attenuate
+nonfocal covariance generated primarily by shared lineage. The focal A-B pair is
+a global control; it is not itself the lineage-confounded comparison.
 
 Neither method demonstrates biological fitness epistasis or causality by itself.
 The simulation directly regulates the joint frequency of two seeded loci, A and
@@ -38,12 +39,17 @@ difference is therefore association, rather than a difference in A or B frequenc
 Mode 0 provides a conventional balanced negative control. Expected pooled A-B MI
 is zero in modes 0 and 1 and approximately 0.298 bits in mode 2.
 
-The intended result is:
+The intended focal result is:
 
 - modes 0 and 1: no systematic focal A-B signal after calibration;
 - mode 2: strong focal A-B signal;
 - increasing cross-HGT: weaker genome-wide population structure, without changing
   the target focal truth.
+
+The intended nonfocal result is that low cross-HGT creates more lineage-driven
+background covariance. SpydrPick measures that marginal covariance, whereas KOVAR
+should attenuate the component explained by the phylogeny. The difference between
+the methods should narrow as cross-HGT erodes lineage structure.
 
 These are predeclared expectations to test, not guaranteed claims about either
 analysis method.
@@ -69,11 +75,13 @@ K * log((target[p,h] + epsilon) / (observed[p,h] + epsilon))
 with `K=0.25` and `epsilon=0.0002`. This mechanism is a controlled frequency
 equilibrium assay; it is not presented as a literal biological fitness model.
 
-Sampling no longer occurs after an arbitrary fixed post-seeding duration. Starting
-1,000 ticks after seeding, all four population tables are checked every 100 ticks.
-A case is sampled once every cell frequency is within 0.03 of its target for five
-consecutive checks. Absolute tick 30,000 is only a safety limit: failure to converge
-by that tick fails the case rather than silently sampling a non-equilibrium state.
+Every continuation runs for the same fixed duration and is sampled at absolute
+tick 30,000, giving exactly 20,000 post-seeding generations. Starting 1,000 ticks
+after seeding, all four population tables are checked every 100 ticks. The first
+tick at which every cell is within 0.03 of its target for five consecutive checks
+is recorded, but it never terminates the simulation. A case that has not reached
+that criterion by sampling is retained and marked `not_reached_by_sampling` for
+quality-control review.
 
 ## Analysis contract
 
@@ -87,6 +95,29 @@ by that tick fails the case rather than silently sampling a non-equilibrium stat
 - The rooted covariate tree is the simulation genealogy at the predeclared neutral
   position 90 kb. It is exact locally but remains a single-tree approximation for
   a genome whose local genealogies are altered by HGT.
+- Lineage labels and covariance-component categories are used only after both
+  methods finish. They are never supplied as candidate or model inputs.
+
+## Lineage-confounding evaluation
+
+For every tested pair, the post-analysis evaluator decomposes binary covariance as
+
+```text
+total covariance
+  = weighted within-population covariance
+  + covariance of population allele frequencies.
+```
+
+Pairs are evaluated separately as focal A-B, focal-proximal, short-distance,
+lineage-driven, within-population, or other distant pairs. The predeclared
+lineage-driven category requires distance greater than 5 kb, no locus within 5 kb
+of A or B, absolute pooled covariance at least 0.01, and at least 80% of the
+absolute component magnitude attributable to between-population covariance.
+
+For an equal discovery budget, the evaluator compares the enrichment of these
+lineage-driven pairs in each method's top 1%. KOVAR Bonferroni counts are also
+reported independently. These categories are evaluation labels, not simulation
+truth supplied to either method.
 
 ## Installation
 
@@ -170,7 +201,7 @@ There are no `gen_0300`, `gen_0400`, or other generation subdirectories.
 
 Important per-case outputs include:
 
-- `equilibrium_status.tsv`: convergence status, sampling tick, and final deviation;
+- `equilibrium_status.tsv`: fixed sampling tick, first equilibrium tick, and final deviation;
 - `focal_monitor.tsv`: every equilibrium check for p1-p4;
 - `focal_endpoint.tsv`: target and observed A-B state frequencies at sampling;
 - `selected_loci.tsv`: focal positions, mutation identifiers, mode, and cross-HGT;
@@ -179,6 +210,10 @@ Important per-case outputs include:
 - `kovar_v083_simulation_tree/kovar_p_vs_distance.png` and distance-stratified QQ plot;
 - KOVAR convergence and runtime diagnostics in `response_models.tsv` and
   `execution_metadata.tsv`.
+- `lineage_pair_metrics.tsv.gz`: pair-level covariance decomposition and
+  method-specific ranks for evaluation only.
 
 Across-case focal tables and mode-by-HGT plots are written below
 `results/spydrpick_all_pairs/` and `results/kovar_v083_simulation_tree/`.
+The lineage-confounding category summary, category-count plot, and equal-budget
+comparison plot are written below `results/lineage_confounding/`.

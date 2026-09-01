@@ -39,7 +39,19 @@ class SlimScriptTests(unittest.TestCase):
         self.assertIn("HGT_P_CROSS", continuation)
         self.assertIn("otherPops", continuation)
         self.assertIn("EQUILIBRIUM_MONITOR_EVERY", continuation)
-        self.assertIn('writeEquilibriumStatus("failed_to_reach_equilibrium"', continuation)
+        self.assertIn('status = "not_reached_by_sampling";', continuation)
+        self.assertIn('status = "equilibrium_reached";', continuation)
+        self.assertIn("sim.setValue(\"first_equilibrium_tick\", community.tick);", continuation)
+        self.assertNotIn("stop(\"Equilibrium was not reached", continuation)
+
+    def test_sampling_occurs_only_at_fixed_end_tick(self) -> None:
+        script = (REPO_ROOT / "slim" / "continue_experiment.slim").read_text()
+        self.assertIn("if (community.tick >= END_TICK) {", script)
+        self.assertIn("finishRun(maximumDeviation);", script)
+        monitor_block = script.split("if (shouldMonitor) {", 1)[1].split(
+            "if (community.tick >= END_TICK)", 1
+        )[0]
+        self.assertNotIn("finishRun", monitor_block)
 
     def test_tree_sequence_time_unit_matches_msprime(self) -> None:
         for filename in ("build_checkpoint.slim", "continue_experiment.slim"):
