@@ -24,6 +24,12 @@ class SelectedLociValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             validate(self.write(Path(directory)), {"A": 10, "B": 50}, mode=1)
 
+    def test_accepts_mode_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(Path(directory))
+            path.write_text(path.read_text().replace("\t1\n", "\t0\n"), encoding="utf-8")
+            validate(path, {"A": 10, "B": 50}, mode=0)
+
     def test_rejects_extra_or_missing_label(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "exactly one A and one B"):

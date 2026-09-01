@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expand the minimal two-mode design into checkpoint and case manifests."""
+"""Expand the three-mode, three-cross-HGT benchmark manifests."""
 
 from __future__ import annotations
 
@@ -10,9 +10,15 @@ from simflow import REPO_ROOT, deterministic_seed, load_config, repo_path, write
 
 
 MODE_LABEL = {
-    1: "within_independent_pooled_dependent",
-    2: "within_dependent_pooled_independent",
+    0: "balanced_independent_negative_control",
+    1: "global_high_frequency_independent",
+    2: "global_high_frequency_dependent",
 }
+
+
+def probability_label(value: float) -> str:
+    """Return a stable path-safe decimal label such as 0, 0p002, or 0p02."""
+    return format(value, ".15g").replace(".", "p")
 
 
 def relative(path: Path) -> str:
@@ -28,6 +34,7 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     population = config["population"]
     loci = config["loci"]
     frequency_dependence = config["frequency_dependence"]
+    equilibrium = config["equilibrium"]
     postprocess = config["postprocess"]
 
     genome_length = int(genome["length"])
@@ -49,14 +56,34 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
 
     modes = [int(mode) for mode in design["modes"]]
     if not modes or any(mode not in MODE_LABEL for mode in modes):
-        raise ValueError("modes must contain only 1 and 2")
+        raise ValueError("modes must contain only 0, 1, and 2")
     if len(set(modes)) != len(modes):
         raise ValueError("modes contains duplicates")
+
+    cross_hgt_probabilities = [float(value) for value in design["cross_hgt_probabilities"]]
+    if not cross_hgt_probabilities or any(
+        value < 0.0 or value > 1.0 for value in cross_hgt_probabilities
+    ):
+        raise ValueError("cross-HGT probabilities must lie between zero and one")
+    if len(set(cross_hgt_probabilities)) != len(cross_hgt_probabilities):
+        raise ValueError("cross-HGT probabilities contain duplicates")
+    within_hgt_probability = float(genome["within_hgt_probability"])
+    if any(value + within_hgt_probability > 1.0 for value in cross_hgt_probabilities):
+        raise ValueError("within- and cross-HGT probabilities must sum to at most one")
 
     strength = float(frequency_dependence["strength"])
     epsilon = float(frequency_dependence["epsilon"])
     if strength <= 0.0 or epsilon <= 0.0:
         raise ValueError("frequency-dependence strength and epsilon must be positive")
+
+    monitor_every = int(equilibrium["monitor_every"])
+    minimum_ticks = int(equilibrium["minimum_ticks"])
+    stable_checks = int(equilibrium["stable_checks"])
+    tolerance = float(equilibrium["tolerance"])
+    if monitor_every < 1 or minimum_ticks < 0 or stable_checks < 1:
+        raise ValueError("equilibrium timing values are invalid")
+    if not 0.0 < tolerance < 1.0:
+        raise ValueError("equilibrium tolerance must lie between zero and one")
 
     checkpoint_root = repo_path(config["paths"]["checkpoint_root"])
     run_root = repo_path(config["paths"]["run_root"])
@@ -79,7 +106,7 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                 "genome_length": genome_length,
                 "mutation_rate": genome["mutation_rate"],
                 "tract_length": genome["mean_hgt_tract"],
-                "within_hgt_probability": genome["within_hgt_probability"],
+                "within_hgt_probability": within_hgt_probability,
                 "ancestral_size": population["ancestral_size"],
                 "clade_size": population["clade_size"],
                 "terminal_size": population["terminal_size"],
@@ -89,34 +116,50 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                 "b_position": b_position,
             }
         )
-        for mode in modes:
-            case_id = f"{rep}__mode_{mode}"
-            cases.append(
-                {
-                    "case_id": case_id,
-                    "replicate": replicate,
-                    "checkpoint_id": checkpoint_id,
-                    "checkpoint_dir": relative(checkpoint_dir),
-                    "out_dir": relative(run_root / rep / f"mode_{mode}"),
-                    "reference": reference,
-                    "mode": mode,
-                    "regime": MODE_LABEL[mode],
-                    "seed": deterministic_seed(master_seed, "continuation", replicate, mode),
-                    "genome_length": genome_length,
-                    "mutation_rate": genome["mutation_rate"],
-                    "tract_length": genome["mean_hgt_tract"],
-                    "within_hgt_probability": genome["within_hgt_probability"],
-                    "terminal_size": population["terminal_size"],
-                    "sample_per_terminal": population["sample_per_terminal"],
-                    "end_tick": end_tick,
-                    "fds_strength": strength,
-                    "fds_epsilon": epsilon,
-                    "ancestral_ne": postprocess["ancestral_ne"],
-                    "tree_position": tree_position,
-                    "a_position": a_position,
-                    "b_position": b_position,
-                }
-            )
+        for cross_hgt_probability in cross_hgt_probabilities:
+            cross_label = probability_label(cross_hgt_probability)
+            for mode in modes:
+                case_id = f"{rep}__cross_{cross_label}__mode_{mode}"
+                cases.append(
+                    {
+                        "case_id": case_id,
+                        "replicate": replicate,
+                        "checkpoint_id": checkpoint_id,
+                        "checkpoint_dir": relative(checkpoint_dir),
+                        "out_dir": relative(
+                            run_root / rep / f"cross_{cross_label}" / f"mode_{mode}"
+                        ),
+                        "reference": reference,
+                        "mode": mode,
+                        "regime": MODE_LABEL[mode],
+                        "cross_hgt_probability": cross_hgt_probability,
+                        "cross_hgt_label": cross_label,
+                        "seed": deterministic_seed(
+                            master_seed,
+                            "continuation",
+                            replicate,
+                            cross_hgt_probability,
+                            mode,
+                        ),
+                        "genome_length": genome_length,
+                        "mutation_rate": genome["mutation_rate"],
+                        "tract_length": genome["mean_hgt_tract"],
+                        "within_hgt_probability": within_hgt_probability,
+                        "terminal_size": population["terminal_size"],
+                        "sample_per_terminal": population["sample_per_terminal"],
+                        "end_tick": end_tick,
+                        "fds_strength": strength,
+                        "fds_epsilon": epsilon,
+                        "equilibrium_monitor_every": monitor_every,
+                        "equilibrium_minimum_ticks": minimum_ticks,
+                        "equilibrium_stable_checks": stable_checks,
+                        "equilibrium_tolerance": tolerance,
+                        "ancestral_ne": postprocess["ancestral_ne"],
+                        "tree_position": tree_position,
+                        "a_position": a_position,
+                        "b_position": b_position,
+                    }
+                )
     return checkpoints, cases
 
 

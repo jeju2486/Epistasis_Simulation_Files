@@ -1,12 +1,13 @@
 [paths]
 reference = "inputs/smoke_reference.fa"
 checkpoint_root = "checkpoints_smoke"
-run_root = "runs_smoke"
+run_root = "runs_smoke_global_frequency_hgt"
 manifest_root = "manifests_smoke"
 
 [design]
 replicates = 1
-modes = [1, 2]
+modes = [0, 1, 2]
+cross_hgt_probabilities = [0.0, 0.002, 0.02]
 master_seed = 8675309
 
 [genome]
@@ -23,7 +24,7 @@ terminal_size = 50
 sample_per_terminal = 10
 deep_split_tick = 20
 terminal_split_tick = 40
-end_tick = 50
+end_tick = 200
 
 [loci]
 a_position = 1000
@@ -32,6 +33,12 @@ b_position = 5000
 [frequency_dependence]
 strength = 0.25
 epsilon = 0.01
+
+[equilibrium]
+monitor_every = 5
+minimum_ticks = 20
+stable_checks = 2
+tolerance = 0.20
 
 [postprocess]
 ancestral_ne = 200

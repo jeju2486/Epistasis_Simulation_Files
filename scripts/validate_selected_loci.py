@@ -19,8 +19,8 @@ def validate(
     counts = Counter(row.get("label", "") for row in rows)
     if counts != Counter({"A": 1, "B": 1}):
         raise ValueError("selected_loci.tsv must contain exactly one A and one B record")
-    if mode is not None and mode not in {1, 2}:
-        raise ValueError("mode must be 1 or 2")
+    if mode is not None and mode not in {0, 1, 2}:
+        raise ValueError("mode must be 0, 1, or 2")
     mutation_ids: set[str] = set()
     for row in rows:
         label = row["label"]
@@ -46,7 +46,7 @@ def main() -> None:
     parser.add_argument("path", type=Path)
     parser.add_argument("--a-position", type=int)
     parser.add_argument("--b-position", type=int)
-    parser.add_argument("--mode", type=int, choices=(1, 2))
+    parser.add_argument("--mode", type=int, choices=(0, 1, 2))
     args = parser.parse_args()
     if (args.a_position is None) != (args.b_position is None):
         parser.error("supply both A and B positions or neither")

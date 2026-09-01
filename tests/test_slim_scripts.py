@@ -7,20 +7,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class SlimScriptTests(unittest.TestCase):
     def test_target_tables_have_the_intended_dependence_structure(self) -> None:
-        mode1_high = (0.0225, 0.1275, 0.1275, 0.7225)
-        mode1_low = tuple(reversed(mode1_high))
-        for table in (mode1_high, mode1_low):
+        mode0 = (0.25, 0.25, 0.25, 0.25)
+        mode1 = (0.0625, 0.1875, 0.1875, 0.5625)
+        mode2 = (0.1875, 0.0625, 0.0625, 0.6875)
+        for table in (mode0, mode1):
             expected_11 = (table[2] + table[3]) * (table[1] + table[3])
             self.assertAlmostEqual(table[3], expected_11)
-        pooled_mode1 = tuple((left + right) / 2 for left, right in zip(mode1_high, mode1_low))
-        self.assertNotAlmostEqual(pooled_mode1[3], 0.25)
-
-        mode2_left = (0.25, 0.05, 0.45, 0.25)
-        mode2_right = (0.25, 0.45, 0.05, 0.25)
-        for table in (mode2_left, mode2_right):
-            self.assertGreater(table[0] * table[3], table[1] * table[2])
-        pooled_mode2 = tuple((left + right) / 2 for left, right in zip(mode2_left, mode2_right))
-        self.assertEqual(pooled_mode2, (0.25, 0.25, 0.25, 0.25))
+        self.assertEqual(mode1[2] + mode1[3], mode2[2] + mode2[3])
+        self.assertEqual(mode1[1] + mode1[3], mode2[1] + mode2[3])
+        self.assertGreater(mode2[0] * mode2[3], mode2[1] * mode2[2])
 
     def test_seeding_uses_four_haplotypes_and_slim_52_mutation_api(self) -> None:
         script = (REPO_ROOT / "slim" / "continue_experiment.slim").read_text()
@@ -32,19 +27,19 @@ class SlimScriptTests(unittest.TestCase):
 
     def test_modes_encode_the_predeclared_joint_targets(self) -> None:
         script = (REPO_ROOT / "slim" / "continue_experiment.slim").read_text()
-        self.assertIn("c(0.0225, 0.1275, 0.1275, 0.7225)", script)
-        self.assertIn("c(0.7225, 0.1275, 0.1275, 0.0225)", script)
-        self.assertIn("c(0.25, 0.05, 0.45, 0.25)", script)
-        self.assertIn("c(0.25, 0.45, 0.05, 0.25)", script)
+        self.assertIn("c(0.25, 0.25, 0.25, 0.25)", script)
+        self.assertIn("c(0.0625, 0.1875, 0.1875, 0.5625)", script)
+        self.assertIn("c(0.1875, 0.0625, 0.0625, 0.6875)", script)
         self.assertIn("FDS_STRENGTH * log((target + FDS_EPSILON) / (freqs + FDS_EPSILON))", script)
 
-    def test_no_cross_hgt_migration_or_periodic_monitor(self) -> None:
-        for filename in ("build_checkpoint.slim", "continue_experiment.slim"):
-            script = (REPO_ROOT / "slim" / filename).read_text()
-            self.assertNotIn("HGT_P_CROSS", script)
-            self.assertNotIn("MONITOR_EVERY", script)
+    def test_cross_hgt_and_equilibrium_monitor_are_explicit(self) -> None:
+        checkpoint = (REPO_ROOT / "slim" / "build_checkpoint.slim").read_text()
+        self.assertNotIn("HGT_P_CROSS", checkpoint)
         continuation = (REPO_ROOT / "slim" / "continue_experiment.slim").read_text()
-        self.assertNotIn("otherPops", continuation)
+        self.assertIn("HGT_P_CROSS", continuation)
+        self.assertIn("otherPops", continuation)
+        self.assertIn("EQUILIBRIUM_MONITOR_EVERY", continuation)
+        self.assertIn('writeEquilibriumStatus("failed_to_reach_equilibrium"', continuation)
 
     def test_tree_sequence_time_unit_matches_msprime(self) -> None:
         for filename in ("build_checkpoint.slim", "continue_experiment.slim"):

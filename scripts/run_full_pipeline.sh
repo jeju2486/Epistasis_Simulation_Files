@@ -53,4 +53,4 @@ python3 scripts/run_kovar_manifest.py --manifest "$CASE_MANIFEST" \
   --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
 python3 scripts/plot_kovar.py --manifest "$CASE_MANIFEST"
 
-echo "[done] five replicates x two modes: SLiM -> SpydrPick -> KOVAR 0.8.3 -> plots"
+echo "[done] five replicates x three modes x three cross-HGT rates: SLiM -> SpydrPick -> KOVAR 0.8.3 -> plots"

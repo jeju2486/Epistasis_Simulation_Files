@@ -1,70 +1,96 @@
-# Frequency-dependent SLiM–SpydrPick–KOVAR benchmark
+# Global-frequency SLiM–SpydrPick–KOVAR benchmark
 
-This repository is a validation benchmark for two distinct questions:
+This repository benchmarks whether KOVAR 0.8.3 can distinguish a planted global
+two-locus association from bacterial population structure. SpydrPick is retained
+as a fast, unadjusted covariation analysis for supplementary comparison.
 
-- SpydrPick asks whether two binary loci are marginally dependent in the pooled sample.
-- KOVAR 0.8.3 asks whether one unordered pair retains evidence of covariation after adjustment for shared ancestry.
+Neither method demonstrates biological fitness epistasis or causality by itself.
+The simulation directly regulates the joint frequency of two seeded loci, A and
+B, so that the statistical truth remains stable while cross-population HGT changes
+the strength of the genome-wide lineage structure.
 
-Neither result proves fitness epistasis or causality. The benchmark deliberately controls the joint frequency of two seeded loci so that the statistical distinction is stable across replicates without requiring mutation-selection balance at the focal sites.
+## Factorial design
 
-## Design
+Each neutral replicate produces four terminal populations, p1-p4. The same neutral
+checkpoint is reused for all nine continuations in that replicate:
 
-The haploid nonWF genome is 100 kb with mutation rate `2e-8`, mean homologous-transfer tract length 500 bp, and within-population HGT probability 0.02 per offspring. There is no cross-population HGT and no migration.
+- modes: `0`, `1`, and `2`;
+- cross-population HGT probabilities per offspring: `0`, `0.002`, and `0.02`;
+- five independent replicates, giving 45 cases in total.
 
-The absolute SLiM timeline is:
+The haploid nonWF genome is 100 kb, with mutation rate `2e-8`, mean HGT tract
+length 500 bp, and within-population HGT probability `0.02` per offspring. A
+cross-HGT event chooses a donor uniformly from the other three populations. The
+within- and cross-HGT probabilities are unconditional and mutually exclusive, so
+their sum is the total chance of an HGT event in an offspring.
 
-| Tick | Event |
+Every population has the same focal target table. Thus p1-p4 can differ throughout
+the rest of the genome, but lineage membership never defines the planted A-B truth.
+
+| Mode | Interpretation | 00 | 01 | 10 | 11 | A frequency | B frequency | Odds ratio |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 0 | balanced independent negative control | 0.25 | 0.25 | 0.25 | 0.25 | 0.50 | 0.50 | 1 |
+| 1 | high-1-frequency independent control | 0.0625 | 0.1875 | 0.1875 | 0.5625 | 0.75 | 0.75 | 1 |
+| 2 | high-1-frequency dependent signal | 0.1875 | 0.0625 | 0.0625 | 0.6875 | 0.75 | 0.75 | 33 |
+
+Modes 1 and 2 deliberately share the same single-locus frequencies. Their focal
+difference is therefore association, rather than a difference in A or B frequency.
+Mode 0 provides a conventional balanced negative control. Expected pooled A-B MI
+is zero in modes 0 and 1 and approximately 0.298 bits in mode 2.
+
+The intended result is:
+
+- modes 0 and 1: no systematic focal A-B signal after calibration;
+- mode 2: strong focal A-B signal;
+- increasing cross-HGT: weaker genome-wide population structure, without changing
+  the target focal truth.
+
+These are predeclared expectations to test, not guaranteed claims about either
+analysis method.
+
+## Timeline and equilibrium sampling
+
+The neutral history is shared within each replicate:
+
+| Absolute tick | Event |
 |---:|---|
-| 1 | Create ancestral population, N=10,000 |
-| 5,000 | Split into two clades, N=5,000 each |
-| 10,000 | Split into p1-p4, N=2,500 each; save neutral checkpoint |
-| 10,000 | Seed A=10 kb and B=50 kb as 00, 01, 10, and 11 at 25% each in every terminal population |
-| 10,001-30,000 | Apply frequency-dependent regulation while mutation and within-population HGT continue |
-| 30,000 | Sample 250 isolates per terminal population |
+| 1 | create ancestral population, N=10,000 |
+| 5,000 | split into two clades, N=5,000 each |
+| 10,000 | split into p1-p4, N=2,500 each and save the neutral checkpoint |
+| 10,000 | start each continuation and seed A=10 kb and B=50 kb as 00, 01, 10, 11 at 25% each |
 
-There is no separate “experimental generation” coordinate. All reports use absolute ticks.
-
-For state `h` in population `p`, the juvenile log-weight correction is
+After seeding, SLiM applies a frequency-dependent correction to juveniles. For
+state `h` in population `p`, the log-weight correction is
 
 ```text
 K * log((target[p,h] + epsilon) / (observed[p,h] + epsilon))
 ```
 
-with `K=0.25` and `epsilon=0.0002`. This is a controlled equilibrium assay, not a claim that real bacterial fitness is literally frequency dependent in this form.
+with `K=0.25` and `epsilon=0.0002`. This mechanism is a controlled frequency
+equilibrium assay; it is not presented as a literal biological fitness model.
 
-### Mode 1: within-population independence, pooled dependence
-
-| Populations | 00 | 01 | 10 | 11 |
-|---|---:|---:|---:|---:|
-| p1, p2 | 0.0225 | 0.1275 | 0.1275 | 0.7225 |
-| p3, p4 | 0.7225 | 0.1275 | 0.1275 | 0.0225 |
-
-A and B are independent within every population, but their clade-aligned marginal frequencies create strong pooled dependence. Expected result: high SpydrPick MI and attenuation by KOVAR if the tree adjustment works.
-
-### Mode 2: within-population dependence, pooled independence
-
-| Populations | 00 | 01 | 10 | 11 |
-|---|---:|---:|---:|---:|
-| p1, p2 | 0.25 | 0.05 | 0.45 | 0.25 |
-| p3, p4 | 0.25 | 0.45 | 0.05 | 0.25 |
-
-Each population has the same positive within-population odds ratio, but opposite A/B marginal-frequency imbalance makes the pooled table exactly uniform. Expected result: low pooled SpydrPick MI and a stronger KOVAR signal if adjustment recovers the replicated within-lineage association.
-
-These are expectations to test, not guaranteed claims about either method. Calibration, convergence, filtering, and replicate variability remain part of the result.
+Sampling no longer occurs after an arbitrary fixed post-seeding duration. Starting
+1,000 ticks after seeding, all four population tables are checked every 100 ticks.
+A case is sampled once every cell frequency is within 0.03 of its target for five
+consecutive checks. Absolute tick 30,000 is only a safety limit: failure to converge
+by that tick fails the case rather than silently sampling a non-equilibrium state.
 
 ## Analysis contract
 
 - All loci with MAF at least 0.05 enter one shared A/C binary alignment.
-- SpydrPick runs once with its default sample weighting, no ARACNE, zero MI threshold, and every eligible pair.
-- KOVAR receives every unordered eligible pair as a two-column `u/v` file. Truth labels are never candidate inputs.
-- KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 5`, and `--spa-mode auto`.
-- The rooted tree is the simulation genealogy at the predeclared neutral position 90 kb. No inferred IQ-TREE/ClonalFrameML stage is run.
-- Because HGT gives different local genealogies along the genome, the 90-kb tree is exact locally but remains a single-tree approximation for genome-wide adjustment.
-- Periodic monitoring is disabled. SLiM writes only checkpoint metadata and the four endpoint A-B tables.
+- SpydrPick uses its default sample weighting, no ARACNE, zero MI threshold, and
+  returns every eligible unordered pair.
+- KOVAR receives every eligible unordered pair as a two-column `u/v` file. Truth
+  labels are never candidate inputs.
+- KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 5`, and
+  `--spa-mode auto`.
+- The rooted covariate tree is the simulation genealogy at the predeclared neutral
+  position 90 kb. It is exact locally but remains a single-tree approximation for
+  a genome whose local genealogies are altered by HGT.
 
 ## Installation
 
-Create the simulation environment:
+Create and activate the simulation environment:
 
 ```bash
 conda env create -f environment.yml
@@ -85,7 +111,8 @@ The final command must print `KO-Variation 0.8.3`. Then return to this repositor
 
 ## Run five jobs at a time
 
-The following command runs the whole pipeline. Each stage permits five concurrent cases; stages remain ordered because downstream files depend on upstream completion.
+This command runs simulation, supplementary SpydrPick, primary KOVAR, and plots.
+Stages remain ordered, while up to five cases run concurrently inside each stage.
 
 ```bash
 CHECKPOINT_JOBS=5 \
@@ -97,37 +124,25 @@ KOVAR_THREADS_PER_CASE=1 \
 bash scripts/run_full_pipeline.sh
 ```
 
-This uses about five CPU cores during each compute stage. On a scheduler, run it inside an allocation; invoking the Bash script directly does not activate `#SBATCH` resources.
-
-If memory is limited during KOVAR, reduce `KOVAR_JOBS` and give each case more threads, for example:
+If KOVAR memory use is limiting, run fewer cases and give a case more threads:
 
 ```bash
 KOVAR_JOBS=1 KOVAR_THREADS_PER_CASE=5 bash scripts/run_kovar_all.sh
 ```
 
-## Stage-by-stage and restart commands
-
-Simulation only:
+Stage-specific commands are:
 
 ```bash
 CHECKPOINT_JOBS=5 CASE_JOBS=5 bash scripts/run_five_replicates.sh
-```
-
-SpydrPick only:
-
-```bash
 JOBS=5 THREADS_PER_CASE=1 bash scripts/run_spydrpick_all.sh
-```
-
-KOVAR only:
-
-```bash
 JOBS=5 THREADS_PER_CASE=1 bash scripts/run_kovar_all.sh
 ```
 
-Completed simulation and SpydrPick directories are skipped by their `_SUCCESS` markers. An interrupted KOVAR score scan is resumed automatically when its `.kovar_checkpoint` is present. Re-running `run_full_pipeline.sh` is therefore the normal restart procedure.
+Completed simulation and SpydrPick directories are skipped using `_SUCCESS`.
+Interrupted KOVAR scans resume from `.kovar_checkpoint`. Re-running the full
+pipeline is therefore the normal restart procedure.
 
-For a quick wiring check, use the smoke configuration:
+For a wiring-only smoke test:
 
 ```bash
 CONFIG=config/smoke.toml \
@@ -135,21 +150,35 @@ CHECKPOINT_JOBS=1 CASE_JOBS=1 SPYDRPICK_JOBS=1 KOVAR_JOBS=1 \
 bash scripts/run_full_pipeline.sh
 ```
 
-The smoke run validates plumbing only; its population sizes and duration are not scientifically interpretable.
+The smoke population sizes, tolerance, and duration are not scientifically
+interpretable.
 
 ## Outputs
 
-Five neutral checkpoints are written below `checkpoints_100kb_neutral10k_mu2e8/`. Ten cases are written below `runs_100kb_frequency_dependent_mu2e8/rep_####/mode_#/`.
+Five neutral checkpoints are written below
+`checkpoints_100kb_neutral10k_mu2e8/`. The 45 flat-generation case directories are
+written as:
 
-Important per-case outputs are:
+```text
+runs_100kb_global_frequency_hgt_mu2e8/
+  rep_####/
+    cross_0|cross_0p002|cross_0p02/
+      mode_0|mode_1|mode_2/
+```
 
-- `focal_endpoint.tsv`: target and observed A-B state frequencies in p1-p4.
-- `selected_loci.tsv`: A/B positions and mutation identifiers.
-- `simulation_tree.nwk`: rooted simulation tree at 90 kb.
-- `spydrpick_all_pairs/mi_vs_distance.png` and `mi_vs_distance_0_5kb.png`.
-- `spydrpick_all_pairs/mi_distance_quantiles.tsv`: 1-kb-bin median, 95th, and 99th MI quantiles.
-- `kovar_v083_simulation_tree/kovar_p_vs_distance.png`.
-- `kovar_v083_simulation_tree/kovar_qq_by_distance.png`.
-- `kovar_v083_simulation_tree/response_models.tsv` and `execution_metadata.tsv`: convergence and runtime diagnostics.
+There are no `gen_0300`, `gen_0400`, or other generation subdirectories.
 
-Across-case focal tables and `focal_ab_by_mode.png` replicate plots are written to `results/spydrpick_all_pairs/` and `results/kovar_v083_simulation_tree/`.
+Important per-case outputs include:
+
+- `equilibrium_status.tsv`: convergence status, sampling tick, and final deviation;
+- `focal_monitor.tsv`: every equilibrium check for p1-p4;
+- `focal_endpoint.tsv`: target and observed A-B state frequencies at sampling;
+- `selected_loci.tsv`: focal positions, mutation identifiers, mode, and cross-HGT;
+- `simulation_tree.nwk`: rooted simulation genealogy at 90 kb;
+- `spydrpick_all_pairs/mi_vs_distance.png` and MI summaries;
+- `kovar_v083_simulation_tree/kovar_p_vs_distance.png` and distance-stratified QQ plot;
+- KOVAR convergence and runtime diagnostics in `response_models.tsv` and
+  `execution_metadata.tsv`.
+
+Across-case focal tables and mode-by-HGT plots are written below
+`results/spydrpick_all_pairs/` and `results/kovar_v083_simulation_tree/`.

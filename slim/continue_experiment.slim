@@ -1,5 +1,5 @@
-// Continue a four-lineage checkpoint to absolute tick END_TICK under one of
-// two frequency-dependent A-B equilibrium regimes. Target: SLiM 5.2.
+// Continue a four-lineage checkpoint under one of three global A-B target
+// regimes and one of three cross-population HGT rates. Target: SLiM 5.2.
 
 initialize() {
     initializeSLiMModelType("nonWF");
@@ -13,16 +13,23 @@ initialize() {
     if (!exists("SAMPLE_FILE")) defineConstant("SAMPLE_FILE", "sample_names.tsv");
     if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
     if (!exists("ENDPOINT_FILE")) defineConstant("ENDPOINT_FILE", "focal_endpoint.tsv");
+    if (!exists("MONITOR_FILE")) defineConstant("MONITOR_FILE", "focal_monitor.tsv");
+    if (!exists("EQUILIBRIUM_FILE")) defineConstant("EQUILIBRIUM_FILE", "equilibrium_status.tsv");
     if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
     if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
+    if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);
     if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
     if (!exists("SAMPLE_PER_TERMINAL")) defineConstant("SAMPLE_PER_TERMINAL", 250);
     if (!exists("END_TICK")) defineConstant("END_TICK", 30000);
     if (!exists("MODE")) defineConstant("MODE", 1);
     if (!exists("FDS_STRENGTH")) defineConstant("FDS_STRENGTH", 0.25);
     if (!exists("FDS_EPSILON")) defineConstant("FDS_EPSILON", 0.0002);
+    if (!exists("EQUILIBRIUM_MONITOR_EVERY")) defineConstant("EQUILIBRIUM_MONITOR_EVERY", 100);
+    if (!exists("EQUILIBRIUM_MINIMUM_TICKS")) defineConstant("EQUILIBRIUM_MINIMUM_TICKS", 1000);
+    if (!exists("EQUILIBRIUM_STABLE_CHECKS")) defineConstant("EQUILIBRIUM_STABLE_CHECKS", 5);
+    if (!exists("EQUILIBRIUM_TOLERANCE")) defineConstant("EQUILIBRIUM_TOLERANCE", 0.03);
     if (!exists("A_POSITION")) defineConstant("A_POSITION", 10000);
     if (!exists("B_POSITION")) defineConstant("B_POSITION", 50000);
 
@@ -55,13 +62,11 @@ function (integer$) abState(o<Individual>$ ind) {
 }
 
 function (float) targetFrequencies(o<Subpopulation>$ pop) {
-    highClade = (pop.name == "p1") | (pop.name == "p2");
-    if (MODE == 1) {
-        if (highClade) return c(0.0225, 0.1275, 0.1275, 0.7225);
-        return c(0.7225, 0.1275, 0.1275, 0.0225);
-    }
-    if (highClade) return c(0.25, 0.05, 0.45, 0.25);
-    return c(0.25, 0.45, 0.05, 0.25);
+    // Every terminal population uses the same target, so population structure
+    // changes only through cross-HGT and never defines the planted A-B truth.
+    if (MODE == 0) return c(0.25, 0.25, 0.25, 0.25);
+    if (MODE == 1) return c(0.0625, 0.1875, 0.1875, 0.5625);
+    return c(0.1875, 0.0625, 0.0625, 0.6875);
 }
 
 function (integer) pairCounts(o<Individual> individuals) {
@@ -108,25 +113,26 @@ function (object<Mutation>) seedFocalLoci(void) {
 }
 
 function (void) writeSelectedLoci(object<Mutation> loci) {
-    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeded_frequency\tmode\n";
+    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeded_frequency\tmode\tcross_hgt_probability\n";
     writeFile(LOCI_FILE, header, append=F);
     labels = c("A", "B");
     for (i in 0:1) {
         locus = loci[i];
         line = labels[i] + "\t" + locus.id + "\t" + locus.position + "\t" +
-               locus.nucleotide + "\t" + sim.mutationFrequencies(NULL, locus) + "\t" + MODE + "\n";
+               locus.nucleotide + "\t" + sim.mutationFrequencies(NULL, locus) + "\t" + MODE +
+               "\t" + HGT_P_CROSS + "\n";
         writeFile(LOCI_FILE, line, append=T);
     }
 }
 
 function (void) writeEndpoint(void) {
-    header = "tick\tmode\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tcount_00\tcount_01\tcount_10\tcount_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\n";
+    header = "tick\tmode\tcross_hgt_probability\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tcount_00\tcount_01\tcount_10\tcount_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\n";
     writeFile(ENDPOINT_FILE, header, append=F);
     for (pop in sim.subpopulations) {
         counts = pairCounts(pop.individuals);
         freqs = counts / pop.individualCount;
         target = targetFrequencies(pop);
-        line = community.tick + "\t" + MODE + "\t" + pop.name + "\t" + pop.individualCount;
+        line = community.tick + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" + pop.name + "\t" + pop.individualCount;
         for (value in target) line = line + "\t" + value;
         for (value in counts) line = line + "\t" + value;
         for (value in freqs) line = line + "\t" + value;
@@ -134,8 +140,37 @@ function (void) writeEndpoint(void) {
     }
 }
 
-function (void) finishRun(void) {
+function (float$) writeMonitor(void) {
+    maximumDeviation = 0.0;
+    stableChecks = asInteger(sim.getValue("stable_checks"));
+    for (pop in sim.subpopulations) {
+        counts = pairCounts(pop.individuals);
+        freqs = counts / pop.individualCount;
+        target = targetFrequencies(pop);
+        deviation = max(abs(freqs - target));
+        maximumDeviation = max(maximumDeviation, deviation);
+        line = community.tick + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" +
+               stableChecks + "\t" + pop.name + "\t" + pop.individualCount;
+        for (value in target) line = line + "\t" + value;
+        for (value in freqs) line = line + "\t" + value;
+        line = line + "\t" + deviation + "\n";
+        writeFile(MONITOR_FILE, line, append=T);
+    }
+    return maximumDeviation;
+}
+
+function (void) writeEquilibriumStatus(string$ status, float$ maximumDeviation) {
+    elapsed = community.tick - asInteger(sim.getValue("start_tick"));
+    text = "status\tsampling_tick\telapsed_ticks\tmode\tcross_hgt_probability\tmax_abs_deviation\ttolerance\tstable_checks\trequired_stable_checks\n" +
+           status + "\t" + community.tick + "\t" + elapsed + "\t" + MODE + "\t" +
+           HGT_P_CROSS + "\t" + maximumDeviation + "\t" + EQUILIBRIUM_TOLERANCE +
+           "\t" + sim.getValue("stable_checks") + "\t" + EQUILIBRIUM_STABLE_CHECKS + "\n";
+    writeFile(EQUILIBRIUM_FILE, text, append=F);
+}
+
+function (void) finishRun(float$ maximumDeviation) {
     writeEndpoint();
+    writeEquilibriumStatus("equilibrium", maximumDeviation);
     sampled = NULL;
     for (pop in sim.subpopulations) {
         draw = pop.sampleIndividuals(min(SAMPLE_PER_TERMINAL, pop.individualCount));
@@ -158,7 +193,15 @@ function (void) finishRun(void) {
 reproduction() {
     for (rep in 0:1) {
         donor = NULL;
-        if ((runif(1) < HGT_P_WITHIN) & (subpop.individualCount > 1))
+        hgtDraw = runif(1);
+        if (hgtDraw < HGT_P_CROSS) {
+            otherPops = sim.subpopulations[sim.subpopulations.id != subpop.id];
+            if (size(otherPops) > 0) {
+                donorPop = sample(otherPops, 1);
+                donor = donorPop.sampleIndividuals(1).haplosomes[0];
+            }
+        }
+        else if ((hgtDraw < (HGT_P_CROSS + HGT_P_WITHIN)) & (subpop.individualCount > 1))
             donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
         if (isNULL(donor))
             subpop.addCloned(individual);
@@ -173,9 +216,16 @@ reproduction() {
 }
 
 s1 1 early() {
-    if (!((MODE == 1) | (MODE == 2))) stop("MODE must be 1 or 2.");
+    if (!((MODE == 0) | (MODE == 1) | (MODE == 2))) stop("MODE must be 0, 1, or 2.");
     if ((FDS_STRENGTH <= 0.0) | (FDS_EPSILON <= 0.0))
         stop("Frequency-dependence parameters must be positive.");
+    if ((HGT_P_WITHIN < 0.0) | (HGT_P_CROSS < 0.0) |
+        ((HGT_P_WITHIN + HGT_P_CROSS) > 1.0))
+        stop("Within- and cross-HGT probabilities must be non-negative and sum to at most one.");
+    if ((EQUILIBRIUM_MONITOR_EVERY < 1) | (EQUILIBRIUM_MINIMUM_TICKS < 0) |
+        (EQUILIBRIUM_STABLE_CHECKS < 1) | (EQUILIBRIUM_TOLERANCE <= 0.0) |
+        (EQUILIBRIUM_TOLERANCE >= 1.0))
+        stop("Invalid equilibrium-monitoring parameters.");
     sim.readFromPopulationFile(CHECKPOINT_FILE);
     if (size(sim.subpopulations) != 4)
         stop("Checkpoint must contain p1-p4.");
@@ -186,6 +236,10 @@ s1 1 early() {
     sim.setValue("B_ID", loci[loci.position == B_POSITION].id);
     writeSelectedLoci(loci);
     sim.setValue("loaded", T);
+    sim.setValue("start_tick", community.tick);
+    sim.setValue("stable_checks", 0);
+    monitorHeader = "tick\tmode\tcross_hgt_probability\tstable_checks_before_update\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\tmax_abs_deviation\n";
+    writeFile(MONITOR_FILE, monitorHeader, append=F);
     community.rescheduleScriptBlock(s2, start=community.tick + 1, end=END_TICK);
     community.rescheduleScriptBlock(s3, start=community.tick + 1, end=END_TICK);
 }
@@ -218,6 +272,29 @@ s2 2 early() {
 }
 
 s3 2 late() {
-    if (!isNULL(sim.getValue("loaded")) & (community.tick >= END_TICK))
-        finishRun();
+    if (isNULL(sim.getValue("loaded"))) return;
+    elapsed = community.tick - asInteger(sim.getValue("start_tick"));
+    shouldMonitor = (elapsed >= EQUILIBRIUM_MINIMUM_TICKS) &
+                    (integerMod(elapsed, EQUILIBRIUM_MONITOR_EVERY) == 0);
+    if (shouldMonitor) {
+        maximumDeviation = writeMonitor();
+        stableChecks = asInteger(sim.getValue("stable_checks"));
+        if (maximumDeviation <= EQUILIBRIUM_TOLERANCE)
+            stableChecks = stableChecks + 1;
+        else
+            stableChecks = 0;
+        sim.setValue("stable_checks", stableChecks);
+        sim.setValue("last_maximum_deviation", maximumDeviation);
+        if (stableChecks >= EQUILIBRIUM_STABLE_CHECKS) {
+            finishRun(maximumDeviation);
+            return;
+        }
+    }
+    if (community.tick >= END_TICK) {
+        maximumDeviation = 1.0;
+        if (!isNULL(sim.getValue("last_maximum_deviation")))
+            maximumDeviation = asFloat(sim.getValue("last_maximum_deviation"));
+        writeEquilibriumStatus("failed_to_reach_equilibrium", maximumDeviation);
+        stop("Equilibrium was not reached before END_TICK.");
+    }
 }

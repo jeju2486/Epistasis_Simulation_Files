@@ -1,12 +1,13 @@
 [paths]
 reference = "inputs/reference_100kb.fa"
 checkpoint_root = "checkpoints_100kb_neutral10k_mu2e8_pilot"
-run_root = "runs_100kb_frequency_dependent_mu2e8_pilot"
+run_root = "runs_100kb_global_frequency_hgt_mu2e8_pilot"
 manifest_root = "manifests_pilot"
 
 [design]
 replicates = 1
-modes = [1, 2]
+modes = [0, 1, 2]
+cross_hgt_probabilities = [0.0, 0.002, 0.02]
 master_seed = 20260901
 
 [genome]
@@ -32,6 +33,12 @@ b_position = 50000
 [frequency_dependence]
 strength = 0.25
 epsilon = 0.0002
+
+[equilibrium]
+monitor_every = 100
+minimum_ticks = 1000
+stable_checks = 5
+tolerance = 0.03
 
 [postprocess]
 ancestral_ne = 10000

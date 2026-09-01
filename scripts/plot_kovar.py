@@ -8,7 +8,7 @@ import csv
 import math
 from pathlib import Path
 
-from plot_spydrpick import FOCAL_COLOR, eligible_positions, focal_pair_columns
+from plot_spydrpick import FOCAL_COLOR, HGT_COLORS, eligible_positions, focal_pair_columns
 from run_kovar_case import RESULT_NAME
 from simflow import read_tsv, repo_path
 
@@ -165,16 +165,29 @@ def main() -> None:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots(figsize=(5.6, 4.6), constrained_layout=True)
-        for mode in (1, 2):
-            subset = [row for row in focal_rows if int(row["mode"]) == mode]
-            ax.scatter([mode] * len(subset), [float(row["neglog10_p"]) for row in subset],
-                       s=45, color=FOCAL_COLOR, edgecolors="black", linewidths=0.5)
-        ax.set(xticks=[1, 2], xticklabels=["Mode 1", "Mode 2"],
+        fig, ax = plt.subplots(figsize=(6.4, 4.8), constrained_layout=True)
+        hgt_values = sorted({float(row["cross_hgt_probability"]) for row in focal_rows})
+        offsets = {
+            value: (index - (len(hgt_values) - 1) / 2) * 0.18
+            for index, value in enumerate(hgt_values)
+        }
+        for hgt in hgt_values:
+            subset = [
+                row for row in focal_rows
+                if math.isclose(float(row["cross_hgt_probability"]), hgt)
+            ]
+            ax.scatter(
+                [int(row["mode"]) + offsets[hgt] for row in subset],
+                [float(row["neglog10_p"]) for row in subset],
+                s=45, color=HGT_COLORS.get(hgt, FOCAL_COLOR), edgecolors="black",
+                linewidths=0.5, label=f"cross-HGT={hgt:g}",
+            )
+        ax.set(xticks=[0, 1, 2], xticklabels=["Mode 0", "Mode 1", "Mode 2"],
                ylabel="A-B −log10(KOVAR primary p-value)",
-               title="KOVAR focal result across replicates")
+               title="KOVAR focal result by mode and cross-HGT")
         ax.set_ylim(bottom=0)
         ax.grid(axis="y", alpha=0.2)
+        ax.legend(frameon=False, fontsize=8)
         fig.savefig(output / "focal_ab_by_mode.png", dpi=220)
         plt.close(fig)
     print(f"[done] KOVAR plots and summaries: {output}")

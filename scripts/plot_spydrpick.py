@@ -14,6 +14,7 @@ from spydrpick_case import parse_edge
 
 
 FOCAL_COLOR = "#D55E00"
+HGT_COLORS = {0.0: "#0072B2", 0.002: "#009E73", 0.02: "#D55E00"}
 
 
 def eligible_positions(path: Path) -> list[int]:
@@ -153,16 +154,29 @@ def main() -> None:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots(figsize=(5.6, 4.6), constrained_layout=True)
-        for mode in (1, 2):
-            subset = [row for row in aggregate if int(row["mode"]) == mode]
-            ax.scatter([mode] * len(subset), [float(row["mi"]) for row in subset],
-                       s=45, color=FOCAL_COLOR, edgecolors="black", linewidths=0.5)
-        ax.set(xticks=[1, 2], xticklabels=["Mode 1", "Mode 2"],
+        fig, ax = plt.subplots(figsize=(6.4, 4.8), constrained_layout=True)
+        hgt_values = sorted({float(row["cross_hgt_probability"]) for row in aggregate})
+        offsets = {
+            value: (index - (len(hgt_values) - 1) / 2) * 0.18
+            for index, value in enumerate(hgt_values)
+        }
+        for hgt in hgt_values:
+            subset = [
+                row for row in aggregate
+                if math.isclose(float(row["cross_hgt_probability"]), hgt)
+            ]
+            ax.scatter(
+                [int(row["mode"]) + offsets[hgt] for row in subset],
+                [float(row["mi"]) for row in subset],
+                s=45, color=HGT_COLORS.get(hgt, FOCAL_COLOR), edgecolors="black",
+                linewidths=0.5, label=f"cross-HGT={hgt:g}",
+            )
+        ax.set(xticks=[0, 1, 2], xticklabels=["Mode 0", "Mode 1", "Mode 2"],
                ylabel="A-B mutual information",
-               title="SpydrPick focal result across replicates")
+               title="SpydrPick focal result by mode and cross-HGT")
         ax.set_ylim(bottom=0)
         ax.grid(axis="y", alpha=0.2)
+        ax.legend(frameon=False, fontsize=8)
         fig.savefig(output / "focal_ab_by_mode.png", dpi=220)
         plt.close(fig)
     print(f"[done] SpydrPick plots and focal summary: {output}")

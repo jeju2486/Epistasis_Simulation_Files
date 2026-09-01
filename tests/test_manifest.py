@@ -17,7 +17,8 @@ class ManifestTests(unittest.TestCase):
         self.config = {
             "paths": {"reference": "inputs/reference.fa", "checkpoint_root": "checkpoints",
                       "run_root": "runs", "manifest_root": "manifests"},
-            "design": {"replicates": 2, "modes": [1, 2], "master_seed": 123},
+            "design": {"replicates": 2, "modes": [0, 1, 2],
+                       "cross_hgt_probabilities": [0.0, 0.002, 0.02], "master_seed": 123},
             "genome": {"length": 100, "mutation_rate": 1e-7, "mean_hgt_tract": 5,
                        "within_hgt_probability": 0.02},
             "population": {"ancestral_size": 100, "clade_size": 50, "terminal_size": 25,
@@ -25,22 +26,26 @@ class ManifestTests(unittest.TestCase):
                            "terminal_split_tick": 20, "end_tick": 40},
             "loci": {"a_position": 10, "b_position": 50},
             "frequency_dependence": {"strength": 0.25, "epsilon": 0.001},
+            "equilibrium": {"monitor_every": 5, "minimum_ticks": 10,
+                            "stable_checks": 2, "tolerance": 0.1},
             "postprocess": {"ancestral_ne": 100, "tree_position": 90},
         }
 
-    def test_expansion_has_one_checkpoint_and_two_modes_per_replicate(self) -> None:
+    def test_expansion_has_one_checkpoint_and_nine_cases_per_replicate(self) -> None:
         checkpoints, cases = build(self.config)
         self.assertEqual(len(checkpoints), 2)
-        self.assertEqual(len(cases), 4)
+        self.assertEqual(len(cases), 18)
         self.assertEqual({row["checkpoint_id"] for row in cases}, {"rep_0001", "rep_0002"})
-        self.assertEqual({row["mode"] for row in cases}, {1, 2})
+        self.assertEqual({row["mode"] for row in cases}, {0, 1, 2})
+        self.assertEqual({row["cross_hgt_probability"] for row in cases}, {0.0, 0.002, 0.02})
         self.assertEqual(
             {row["regime"] for row in cases},
-            {"within_independent_pooled_dependent", "within_dependent_pooled_independent"},
+            {"balanced_independent_negative_control", "global_high_frequency_independent",
+             "global_high_frequency_dependent"},
         )
-        self.assertEqual(cases[0]["out_dir"], "runs/rep_0001/mode_1")
-        self.assertEqual(cases[0]["case_id"], "rep_0001__mode_1")
-        self.assertNotIn("cross_hgt_probability", cases[0])
+        self.assertEqual(cases[0]["out_dir"], "runs/rep_0001/cross_0/mode_0")
+        self.assertEqual(cases[0]["case_id"], "rep_0001__cross_0__mode_0")
+        self.assertEqual(cases[4]["cross_hgt_label"], "0p002")
 
     def test_invalid_timeline_is_rejected(self) -> None:
         self.config["population"]["end_tick"] = 20
@@ -48,8 +53,13 @@ class ManifestTests(unittest.TestCase):
             build(self.config)
 
     def test_invalid_mode_is_rejected(self) -> None:
-        self.config["design"]["modes"] = [0, 1]
-        with self.assertRaisesRegex(ValueError, "only 1 and 2"):
+        self.config["design"]["modes"] = [0, 3]
+        with self.assertRaisesRegex(ValueError, "only 0, 1, and 2"):
+            build(self.config)
+
+    def test_invalid_hgt_sum_is_rejected(self) -> None:
+        self.config["design"]["cross_hgt_probabilities"] = [0.99]
+        with self.assertRaisesRegex(ValueError, "sum to at most one"):
             build(self.config)
 
     def test_seeds_are_stable_and_unique(self) -> None:

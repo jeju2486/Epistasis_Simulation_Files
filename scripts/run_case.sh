@@ -4,8 +4,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SLIM_BIN="${SLIM_BIN:-slim}"
 OUTDIR="" CHECKPOINT_DIR="" REF_FILE="" SEED="" MODE=""
-GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN="" N_TERMINAL=""
+GENOME_LENGTH="" MU="" TRACT_LENGTH="" HGT_WITHIN="" HGT_CROSS="" N_TERMINAL=""
 SAMPLE_PER_TERMINAL="" END_TICK="" FDS_STRENGTH="" FDS_EPSILON=""
+EQUILIBRIUM_MONITOR_EVERY="" EQUILIBRIUM_MINIMUM_TICKS=""
+EQUILIBRIUM_STABLE_CHECKS="" EQUILIBRIUM_TOLERANCE=""
 ANCESTRAL_NE="" TREE_POSITION="" A_POSITION="" B_POSITION=""
 
 while [[ $# -gt 0 ]]; do
@@ -19,11 +21,16 @@ while [[ $# -gt 0 ]]; do
     --mu) MU="$2"; shift 2 ;;
     --tract-length) TRACT_LENGTH="$2"; shift 2 ;;
     --within-hgt) HGT_WITHIN="$2"; shift 2 ;;
+    --cross-hgt) HGT_CROSS="$2"; shift 2 ;;
     --terminal-size) N_TERMINAL="$2"; shift 2 ;;
     --sample-per-terminal) SAMPLE_PER_TERMINAL="$2"; shift 2 ;;
     --end-tick) END_TICK="$2"; shift 2 ;;
     --fds-strength) FDS_STRENGTH="$2"; shift 2 ;;
     --fds-epsilon) FDS_EPSILON="$2"; shift 2 ;;
+    --equilibrium-monitor-every) EQUILIBRIUM_MONITOR_EVERY="$2"; shift 2 ;;
+    --equilibrium-minimum-ticks) EQUILIBRIUM_MINIMUM_TICKS="$2"; shift 2 ;;
+    --equilibrium-stable-checks) EQUILIBRIUM_STABLE_CHECKS="$2"; shift 2 ;;
+    --equilibrium-tolerance) EQUILIBRIUM_TOLERANCE="$2"; shift 2 ;;
     --ancestral-ne) ANCESTRAL_NE="$2"; shift 2 ;;
     --tree-position) TREE_POSITION="$2"; shift 2 ;;
     --a-position) A_POSITION="$2"; shift 2 ;;
@@ -32,11 +39,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-required=(OUTDIR CHECKPOINT_DIR REF_FILE SEED MODE GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN N_TERMINAL SAMPLE_PER_TERMINAL END_TICK FDS_STRENGTH FDS_EPSILON ANCESTRAL_NE TREE_POSITION A_POSITION B_POSITION)
+required=(OUTDIR CHECKPOINT_DIR REF_FILE SEED MODE GENOME_LENGTH MU TRACT_LENGTH HGT_WITHIN HGT_CROSS N_TERMINAL SAMPLE_PER_TERMINAL END_TICK FDS_STRENGTH FDS_EPSILON EQUILIBRIUM_MONITOR_EVERY EQUILIBRIUM_MINIMUM_TICKS EQUILIBRIUM_STABLE_CHECKS EQUILIBRIUM_TOLERANCE ANCESTRAL_NE TREE_POSITION A_POSITION B_POSITION)
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Missing required value: $name" >&2; exit 2; }
 done
-case "$MODE" in 1|2) ;; *) echo "Mode must be 1 or 2" >&2; exit 2 ;; esac
+case "$MODE" in 0|1|2) ;; *) echo "Mode must be 0, 1, or 2" >&2; exit 2 ;; esac
 [[ "$OUTDIR" = /* ]] || OUTDIR="$REPO_ROOT/$OUTDIR"
 [[ "$CHECKPOINT_DIR" = /* ]] || CHECKPOINT_DIR="$REPO_ROOT/$CHECKPOINT_DIR"
 [[ "$REF_FILE" = /* ]] || REF_FILE="$REPO_ROOT/$REF_FILE"
@@ -70,7 +77,11 @@ end_tick	$END_TICK
 fds_strength	$FDS_STRENGTH
 fds_epsilon	$FDS_EPSILON
 within_hgt_probability	$HGT_WITHIN
-cross_hgt_probability	0
+cross_hgt_probability	$HGT_CROSS
+equilibrium_monitor_every	$EQUILIBRIUM_MONITOR_EVERY
+equilibrium_minimum_ticks	$EQUILIBRIUM_MINIMUM_TICKS
+equilibrium_stable_checks	$EQUILIBRIUM_STABLE_CHECKS
+equilibrium_tolerance	$EQUILIBRIUM_TOLERANCE
 A_position	$A_POSITION
 B_position	$B_POSITION
 tree_position	$TREE_POSITION
@@ -82,11 +93,18 @@ EOF
   -d "SAMPLE_FILE=\"$TMPDIR_RUN/sample_names.tsv\"" \
   -d "LOCI_FILE=\"$TMPDIR_RUN/selected_loci.tsv\"" \
   -d "ENDPOINT_FILE=\"$TMPDIR_RUN/focal_endpoint.tsv\"" \
+  -d "MONITOR_FILE=\"$TMPDIR_RUN/focal_monitor.tsv\"" \
+  -d "EQUILIBRIUM_FILE=\"$TMPDIR_RUN/equilibrium_status.tsv\"" \
   -d "GENOME_LENGTH=$GENOME_LENGTH" -d "MU=$MU" \
   -d "TRACT_LENGTH=$TRACT_LENGTH" -d "HGT_P_WITHIN=$HGT_WITHIN" \
+  -d "HGT_P_CROSS=$HGT_CROSS" \
   -d "N_TERMINAL=$N_TERMINAL" -d "SAMPLE_PER_TERMINAL=$SAMPLE_PER_TERMINAL" \
   -d "END_TICK=$END_TICK" -d "MODE=$MODE" \
   -d "FDS_STRENGTH=$FDS_STRENGTH" -d "FDS_EPSILON=$FDS_EPSILON" \
+  -d "EQUILIBRIUM_MONITOR_EVERY=$EQUILIBRIUM_MONITOR_EVERY" \
+  -d "EQUILIBRIUM_MINIMUM_TICKS=$EQUILIBRIUM_MINIMUM_TICKS" \
+  -d "EQUILIBRIUM_STABLE_CHECKS=$EQUILIBRIUM_STABLE_CHECKS" \
+  -d "EQUILIBRIUM_TOLERANCE=$EQUILIBRIUM_TOLERANCE" \
   -d "A_POSITION=$A_POSITION" -d "B_POSITION=$B_POSITION" \
   "$REPO_ROOT/slim/continue_experiment.slim" > "$TMPDIR_RUN/slim.log" 2>&1
 
@@ -99,7 +117,7 @@ python "$REPO_ROOT/scripts/export_oracle_tree.py" --trees "$TMPDIR_RUN/out.trees
   --sample-map "$TMPDIR_RUN/sample_names.tsv" --output "$TMPDIR_RUN/simulation_tree.nwk" \
   --position "$TREE_POSITION" --ancestral-ne "$ANCESTRAL_NE" --seed "$SEED"
 
-for file in out.trees out.vcf sample_names.tsv selected_loci.tsv focal_endpoint.tsv all_snps.fa all_snps.positions.tsv simulation_tree.nwk; do
+for file in out.trees out.vcf sample_names.tsv selected_loci.tsv focal_endpoint.tsv focal_monitor.tsv equilibrium_status.tsv all_snps.fa all_snps.positions.tsv simulation_tree.nwk; do
   [[ -s "$TMPDIR_RUN/$file" ]] || { echo "Missing $file" >&2; exit 1; }
 done
 touch "$TMPDIR_RUN/_SUCCESS"
