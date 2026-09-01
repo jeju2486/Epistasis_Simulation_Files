@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-"""Expand a compact TOML design into checkpoint and continuation manifests."""
+"""Expand the minimal two-mode design into checkpoint and case manifests."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from simflow import (
-    REPO_ROOT,
-    deterministic_seed,
-    load_config,
-    probability_slug,
-    repo_path,
-    write_tsv_atomic,
-)
+from simflow import REPO_ROOT, deterministic_seed, load_config, repo_path, write_tsv_atomic
 
 
-MODE_ACTIVE_PAIR = {0: "AB_and_CD_neutral", 1: "AB", 2: "CD"}
+MODE_LABEL = {
+    1: "within_independent_pooled_dependent",
+    2: "within_dependent_pooled_independent",
+}
 
 
 def relative(path: Path) -> str:
@@ -31,119 +27,96 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     genome = config["genome"]
     population = config["population"]
     loci = config["loci"]
-    experiment = config["experiment"]
+    frequency_dependence = config["frequency_dependence"]
     postprocess = config["postprocess"]
+
+    genome_length = int(genome["length"])
+    a_position = int(loci["a_position"])
+    b_position = int(loci["b_position"])
+    tree_position = int(postprocess["tree_position"])
+    if not 0 <= a_position < b_position < genome_length:
+        raise ValueError("require 0 <= A < B < genome length")
+    if not 0 <= tree_position < genome_length:
+        raise ValueError("tree position must lie within the genome")
+    if tree_position in {a_position, b_position}:
+        raise ValueError("tree position must not equal A or B")
+
+    deep_split_tick = int(population["deep_split_tick"])
+    terminal_split_tick = int(population["terminal_split_tick"])
+    end_tick = int(population["end_tick"])
+    if not 1 < deep_split_tick < terminal_split_tick < end_tick:
+        raise ValueError("require 1 < deep split < terminal split < end tick")
+
+    modes = [int(mode) for mode in design["modes"]]
+    if not modes or any(mode not in MODE_LABEL for mode in modes):
+        raise ValueError("modes must contain only 1 and 2")
+    if len(set(modes)) != len(modes):
+        raise ValueError("modes contains duplicates")
+
+    strength = float(frequency_dependence["strength"])
+    epsilon = float(frequency_dependence["epsilon"])
+    if strength <= 0.0 or epsilon <= 0.0:
+        raise ValueError("frequency-dependence strength and epsilon must be positive")
 
     checkpoint_root = repo_path(config["paths"]["checkpoint_root"])
     run_root = repo_path(config["paths"]["run_root"])
     reference = relative(repo_path(config["paths"]["reference"]))
     master_seed = int(design["master_seed"])
-    focal_positions = [
-        int(loci["a_position"]),
-        int(loci["b_position"]),
-        int(loci["c_position"]),
-        int(loci["d_position"]),
-    ]
-    if focal_positions != sorted(set(focal_positions)):
-        raise ValueError("A-D positions must be unique and ordered A < B < C < D")
-    if focal_positions[0] < 0 or focal_positions[-1] >= int(genome["length"]):
-        raise ValueError("A-D positions must lie within the simulated genome")
-    if focal_positions[1] - focal_positions[0] == focal_positions[3] - focal_positions[2]:
-        raise ValueError("A-B and C-D distances must differ in this visualization design")
-
-    modes = [int(mode) for mode in design["modes"]]
-    if not modes or any(mode not in {0, 1, 2} for mode in modes):
-        raise ValueError("modes must contain only 0 (neutral), 1 (AB), and 2 (CD)")
-    raw_generations = experiment["generations"]
-    generations = (
-        [int(value) for value in raw_generations]
-        if isinstance(raw_generations, list)
-        else [int(raw_generations)]
-    )
-    if not generations or any(value < 1 for value in generations):
-        raise ValueError("experiment.generations must contain positive integers")
-    if len(set(generations)) != len(generations):
-        raise ValueError("experiment.generations contains duplicate durations")
-    if len(generations) != 1:
-        raise ValueError(
-            "experiment.generations must contain exactly one duration; "
-            "case output paths no longer include a generation subdirectory"
-        )
-
     checkpoints: list[dict[str, object]] = []
     cases: list[dict[str, object]] = []
 
     for replicate in range(1, int(design["replicates"]) + 1):
         rep = f"rep_{replicate:04d}"
-        for cross_probability in design["cross_hgt_probabilities"]:
-            cross_probability = float(cross_probability)
-            cross_slug = probability_slug(cross_probability)
-            checkpoint_id = f"{rep}__cross_{cross_slug}"
-            checkpoint_dir = checkpoint_root / rep / f"cross_{cross_slug}"
-            checkpoints.append(
+        checkpoint_dir = checkpoint_root / rep
+        checkpoint_id = rep
+        checkpoints.append(
+            {
+                "replicate": replicate,
+                "checkpoint_id": checkpoint_id,
+                "seed": deterministic_seed(master_seed, "checkpoint", replicate),
+                "out_dir": relative(checkpoint_dir),
+                "reference": reference,
+                "genome_length": genome_length,
+                "mutation_rate": genome["mutation_rate"],
+                "tract_length": genome["mean_hgt_tract"],
+                "within_hgt_probability": genome["within_hgt_probability"],
+                "ancestral_size": population["ancestral_size"],
+                "clade_size": population["clade_size"],
+                "terminal_size": population["terminal_size"],
+                "deep_split_tick": deep_split_tick,
+                "terminal_split_tick": terminal_split_tick,
+                "a_position": a_position,
+                "b_position": b_position,
+            }
+        )
+        for mode in modes:
+            case_id = f"{rep}__mode_{mode}"
+            cases.append(
                 {
+                    "case_id": case_id,
                     "replicate": replicate,
                     "checkpoint_id": checkpoint_id,
-                    "seed": deterministic_seed(master_seed, "checkpoint", replicate, cross_probability),
-                    "out_dir": relative(checkpoint_dir),
+                    "checkpoint_dir": relative(checkpoint_dir),
+                    "out_dir": relative(run_root / rep / f"mode_{mode}"),
                     "reference": reference,
-                    "genome_length": genome["length"],
+                    "mode": mode,
+                    "regime": MODE_LABEL[mode],
+                    "seed": deterministic_seed(master_seed, "continuation", replicate, mode),
+                    "genome_length": genome_length,
                     "mutation_rate": genome["mutation_rate"],
                     "tract_length": genome["mean_hgt_tract"],
                     "within_hgt_probability": genome["within_hgt_probability"],
-                    "cross_hgt_probability": cross_probability,
-                    "ancestral_size": population["ancestral_size"],
-                    "clade_size": population["clade_size"],
                     "terminal_size": population["terminal_size"],
-                    "ancestral_generations": population["ancestral_generations"],
-                    "deep_generations": population["deep_clade_generations"],
-                    "terminal_generations": population["terminal_generations"],
-                    "a_position": focal_positions[0],
-                    "b_position": focal_positions[1],
-                    "c_position": focal_positions[2],
-                    "d_position": focal_positions[3],
+                    "sample_per_terminal": population["sample_per_terminal"],
+                    "end_tick": end_tick,
+                    "fds_strength": strength,
+                    "fds_epsilon": epsilon,
+                    "ancestral_ne": postprocess["ancestral_ne"],
+                    "tree_position": tree_position,
+                    "a_position": a_position,
+                    "b_position": b_position,
                 }
             )
-
-            for duration in generations:
-                for mode in modes:
-                    case_id = f"{rep}__cross_{cross_slug}__mode_{mode}"
-                    cases.append(
-                        {
-                            "case_id": case_id,
-                            "replicate": replicate,
-                            "checkpoint_id": checkpoint_id,
-                            "checkpoint_dir": relative(checkpoint_dir),
-                            "out_dir": relative(
-                                run_root / rep / f"cross_{cross_slug}" / f"mode_{mode}"
-                            ),
-                            "reference": reference,
-                            "mode": mode,
-                            "active_pair": MODE_ACTIVE_PAIR[mode],
-                            "cross_hgt_probability": cross_probability,
-                            "seed": deterministic_seed(
-                                master_seed, "continuation", replicate,
-                                cross_probability, duration, mode,
-                            ),
-                            "genome_length": genome["length"],
-                            "mutation_rate": genome["mutation_rate"],
-                            "tract_length": genome["mean_hgt_tract"],
-                            "within_hgt_probability": genome["within_hgt_probability"],
-                            "terminal_size": population["terminal_size"],
-                            "sample_per_terminal": population["sample_per_terminal"],
-                            "experiment_generations": duration,
-                            "s_ab": experiment["s_ab"],
-                            "s_cd": experiment["s_cd"],
-                            "monitor_every": experiment["monitor_every"],
-                            "ancestral_ne": postprocess["ancestral_ne"],
-                            "oracle_tree_position": postprocess["oracle_tree_position"],
-                            "a_position": focal_positions[0],
-                            "b_position": focal_positions[1],
-                            "c_position": focal_positions[2],
-                            "d_position": focal_positions[3],
-                        }
-                    )
-
     return checkpoints, cases
 
 
@@ -151,15 +124,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
-
     config = load_config(args.config)
     checkpoints, cases = build(config)
     manifest_root = repo_path(config["paths"]["manifest_root"])
-
     write_tsv_atomic(manifest_root / "checkpoints.tsv", checkpoints, list(checkpoints[0]))
     write_tsv_atomic(manifest_root / "cases.tsv", cases, list(cases[0]))
     print(f"[done] {len(checkpoints)} checkpoints -> {manifest_root / 'checkpoints.tsv'}")
-    print(f"[done] {len(cases)} continuations -> {manifest_root / 'cases.tsv'}")
+    print(f"[done] {len(cases)} cases -> {manifest_root / 'cases.tsv'}")
 
 
 if __name__ == "__main__":

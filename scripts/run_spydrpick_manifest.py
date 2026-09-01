@@ -20,8 +20,6 @@ def run_one(row: dict[str, str], args: argparse.Namespace) -> tuple[str, int, st
     ]
     if args.force:
         command.append("--force")
-    if args.unweighted:
-        command.append("--unweighted")
     completed = subprocess.run(
         command, cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, check=False,
@@ -36,7 +34,6 @@ def main() -> None:
     parser.add_argument("--threads-per-case", type=int, default=1)
     parser.add_argument("--spydrpick", default=os.environ.get("SPYDRPICK_BIN", "SpydrPick"))
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--unweighted", action="store_true")
     parser.add_argument("--min-maf", type=float, default=0.05)
     args = parser.parse_args()
     if args.jobs < 1 or args.threads_per_case < 1:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run KOVAR 0.8.1 for one completed simulation case."""
+"""Run KOVAR 0.8.3 on the complete SpydrPick-eligible pair universe."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 from kovar_inputs import materialize_pairs, read_fasta
+
+
+RESULT_NAME = "kovar_v083_simulation_tree"
 
 
 def require(path: Path, nonempty: bool = True) -> None:
@@ -20,133 +22,111 @@ def require(path: Path, nonempty: bool = True) -> None:
         raise FileNotFoundError(f"missing required input: {path}")
 
 
-def run_checked(command: list[str], cwd: Path, log: Path, env: dict[str, str]) -> None:
-    with log.open("w", encoding="utf-8") as handle:
-        completed = subprocess.run(
-            command, cwd=cwd, env=env, stdout=handle, stderr=subprocess.STDOUT,
-            text=True, check=False,
-        )
-    if completed.returncode:
-        raise RuntimeError(f"command exited {completed.returncode}; see {log}")
+def archive(path: Path, label: str) -> Path:
+    destination = path.with_name(
+        f"{path.name}.{label}.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    )
+    path.replace(destination)
+    return destination
 
 
 def run_case(args: argparse.Namespace) -> None:
     case_dir = args.case_dir.resolve()
     spydrpick = case_dir / "spydrpick_all_pairs"
-    require(case_dir / "_SUCCESS", nonempty=False)
-    require(spydrpick / "_SUCCESS", nonempty=False)
+    binary = spydrpick / "all_snps.binary_ac.fa"
+    compressed_pairs = spydrpick / "spydrpick.edges.gz"
+    pairs = spydrpick / "kovar_pairs.tsv"
+    tree = case_dir / "simulation_tree.nwk"
     for path in (
-        case_dir / "all_snps.fa", case_dir / "all_snps.positions.tsv",
-        case_dir / "core_snps.fa", spydrpick / "spydrpick.edges.gz",
-        spydrpick / "all_snps.binary_ac.fa",
+        case_dir / "_SUCCESS", spydrpick / "_SUCCESS", binary,
+        compressed_pairs, tree,
     ):
-        require(path)
+        require(path, nonempty=path.name != "_SUCCESS")
 
     version = subprocess.run(
         [args.kovar, "--version"], text=True, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, check=False,
     )
-    if version.returncode or version.stdout.strip() != "KO-Variation 0.8.1":
-        raise RuntimeError(f"expected KO-Variation 0.8.1, got: {version.stdout.strip()}")
+    if version.returncode or version.stdout.strip() != "KO-Variation 0.8.3":
+        raise RuntimeError(f"expected KO-Variation 0.8.3, got: {version.stdout.strip()}")
 
-    analysis_label = "kovar_v081" if args.tree_mode == "core" else f"kovar_v081_{args.tree_mode}"
-    if args.max_pairs:
-        analysis_label += f"_diagnostic_top_{args.max_pairs}"
-    output = case_dir / analysis_label
+    output = case_dir / RESULT_NAME
     if (output / "_SUCCESS").exists() and not args.force:
         print(f"[skip] {output}")
         return
-    if output.exists():
-        stale = output.with_name(f"{output.name}.incomplete.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
-        output.replace(stale)
-        print(f"[archive] {stale}")
+    if output.exists() and args.force:
+        print(f"[archive] {archive(output, 'replaced')}")
 
-    temporary = Path(tempfile.mkdtemp(prefix=output.name + ".tmp.", dir=case_dir))
+    pair_count = materialize_pairs(compressed_pairs, pairs)
+    records = read_fasta(binary)
+    samples = len(records)
+    loci = len(records[0][1])
+    expected_pairs = loci * (loci - 1) // 2
+    if pair_count != expected_pairs:
+        raise ValueError(f"found {pair_count} pairs; expected complete universe of {expected_pairs}")
+
+    resume = output.exists() and (output / ".kovar_checkpoint").exists()
+    if output.exists() and not resume:
+        print(f"[archive] {archive(output, 'incomplete')}")
+
+    command = [
+        args.kovar, "--fasta", str(binary), "--pairs", str(pairs),
+        "--tree", str(tree), "--out", str(output),
+        "--min-maf", str(args.min_maf),
+        "--min-cell-count", str(args.min_cell_count),
+        "--spa-mode", args.spa_mode, "--threads", str(args.threads),
+        "--no-progress",
+    ]
+    if resume:
+        command.append("--resume")
+
     env = os.environ.copy()
     for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         env.setdefault(variable, "1")
-    try:
-        binary = temporary / "all_snps.binary_ac.fa"
-        pairs = temporary / "spydrpick_pairs.0based.tsv"
-        shutil.copy2(spydrpick / "all_snps.binary_ac.fa", binary)
-        binary_records = read_fasta(binary)
-        samples = len(binary_records)
-        loci = len(binary_records[0][1])
-        pair_count = materialize_pairs(spydrpick / "spydrpick.edges.gz", pairs, args.max_pairs)
+    log = case_dir / f"{RESULT_NAME}.log"
+    with log.open("a" if resume else "w", encoding="utf-8") as handle:
+        completed = subprocess.run(
+            command, cwd=case_dir, env=env, stdout=handle,
+            stderr=subprocess.STDOUT, text=True, check=False,
+        )
+    if completed.returncode:
+        raise RuntimeError(f"KOVAR exited {completed.returncode}; see {log}")
+    for filename in (
+        "ko_variation.tsv", "response_models.tsv", "run_summary.txt",
+        "execution_metadata.tsv",
+    ):
+        require(output / filename)
 
-        tree: Path | None = None
-        tree_command: list[str] | None = None
-        if args.tree_mode == "core":
-            prefix = temporary / "core_tree"
-            tree_command = [
-                args.iqtree, "-s", str(case_dir / "core_snps.fa"),
-                "-pre", str(prefix), "-m", "GTR+ASC", "-seed", str(args.seed),
-                "-nt", str(args.tree_threads), "-redo",
-            ]
-            run_checked(tree_command, temporary, temporary / "iqtree.log", env)
-            tree = prefix.with_suffix(".treefile")
-            require(tree)
-        elif args.tree_mode == "oracle":
-            tree = case_dir / "oracle_local_tree.nwk"
-            require(tree)
-
-        results = temporary / "results"
-        command = [
-            args.kovar, "--fasta", str(binary), "--pairs", str(pairs),
-            "--out", str(results), "--direction-mode", "both",
-            "--min-maf", str(args.min_maf), "--min-cell-count", str(args.min_cell_count),
-            "--spa-mode", args.spa_mode, "--full-refit-p", str(args.full_refit_p),
-            "--threads", str(args.threads), "--worker-chunk-size", str(args.worker_chunk_size),
-            "--predictor-batch-size", str(args.predictor_batch_size), "--overwrite",
-        ]
-        if tree is not None:
-            command.extend(["--tree", str(tree), "--tree-missing-length", "error"])
-        run_checked(command, temporary, temporary / "kovar.log", env)
-        for filename in ("ko_variation.tsv", "response_models.tsv", "run_summary.txt"):
-            require(results / filename)
-
-        # The exhaustive plain pair file can be reconstructed from the compressed
-        # SpydrPick result and otherwise doubles pair-storage requirements.
-        pairs.unlink()
-        metadata = {
-            "version": version.stdout.strip(), "case_dir": str(case_dir),
-            "samples": samples, "loci": loci, "pairs": pair_count,
-            "candidate_universe": "all_spydrpick_pairs" if args.max_pairs == 0 else "diagnostic_mi_prefix",
-            "max_pairs": args.max_pairs, "tree_mode": args.tree_mode,
-            "tree_command": tree_command, "kovar_command": command,
-        }
-        (temporary / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-        (temporary / "_SUCCESS").write_text("complete\n", encoding="utf-8")
-        temporary.replace(output)
-    except Exception:
-        failed = output.with_name(f"{output.name}.failed.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
-        temporary.replace(failed)
-        raise
+    metadata = {
+        "version": version.stdout.strip(), "case_dir": str(case_dir),
+        "samples": samples, "loci": loci, "pairs": pair_count,
+        "candidate_universe": "all_MAF_eligible_unordered_pairs",
+        "tree": str(tree), "resumed": resume, "kovar_command": command,
+    }
+    (output / "run_metadata.json").write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+    )
+    shutil.copy2(log, output / "kovar.log")
+    (output / "_SUCCESS").write_text("complete\n", encoding="utf-8")
     print(f"[done] {output}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case-dir", required=True, type=Path)
-    parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--kovar", default=os.environ.get("KOVAR_BIN", "ko-variation"))
-    parser.add_argument("--iqtree", default=os.environ.get("IQTREE_BIN", "iqtree2"))
-    parser.add_argument("--tree-mode", choices=("core", "oracle", "grm"), default="core")
-    parser.add_argument("--tree-threads", type=int, default=1)
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--min-maf", type=float, default=0.05)
     parser.add_argument("--min-cell-count", type=int, default=5)
-    parser.add_argument("--spa-mode", choices=("off", "auto", "always"), default="off")
-    parser.add_argument("--full-refit-p", type=float, default=0.0)
-    parser.add_argument("--worker-chunk-size", type=int, default=1)
-    parser.add_argument("--predictor-batch-size", type=int, default=256)
-    parser.add_argument("--max-pairs", type=int, default=0)
+    parser.add_argument("--spa-mode", choices=("off", "auto", "always"), default="auto")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    if min(args.threads, args.tree_threads, args.worker_chunk_size, args.predictor_batch_size) < 1:
-        parser.error("thread, chunk and batch values must be positive")
-    if args.max_pairs < 0:
-        parser.error("--max-pairs must be non-negative")
+    if args.threads < 1:
+        parser.error("--threads must be positive")
+    if not 0.0 <= args.min_maf <= 0.5:
+        parser.error("--min-maf must lie between zero and 0.5")
+    if args.min_cell_count < 0:
+        parser.error("--min-cell-count must be non-negative")
     run_case(args)
 
 

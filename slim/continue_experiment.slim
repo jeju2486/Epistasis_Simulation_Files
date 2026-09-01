@@ -1,13 +1,9 @@
-// Seed focal standing variation at experimental generation 0 and continue an
-// unseeded four-lineage checkpoint through Mode 0 (neutral control), Mode 1
-// (global A-B compatibility), or Mode 2 (independent clade-aligned C and D
-// main effects). Target: SLiM 5.2.
+// Continue a four-lineage checkpoint to absolute tick END_TICK under one of
+// two frequency-dependent A-B equilibrium regimes. Target: SLiM 5.2.
 
 initialize() {
     initializeSLiMModelType("nonWF");
     initializeSLiMOptions(keepPedigrees=T, nucleotideBased=T);
-    // This continuation retains the checkpoint's non-overlapping life cycle:
-    // one tick is exactly one generation.
     initializeTreeSeq(timeUnit="generations");
 
     if (!exists("REF_FILE")) defineConstant("REF_FILE", "inputs/reference_100kb.fa");
@@ -15,32 +11,24 @@ initialize() {
     if (!exists("TREE_OUT")) defineConstant("TREE_OUT", "out.trees");
     if (!exists("VCF_OUT")) defineConstant("VCF_OUT", "out.vcf");
     if (!exists("SAMPLE_FILE")) defineConstant("SAMPLE_FILE", "sample_names.tsv");
-    if (!exists("MONITOR_FILE")) defineConstant("MONITOR_FILE", "monitor.tsv");
     if (!exists("LOCI_FILE")) defineConstant("LOCI_FILE", "selected_loci.tsv");
-
+    if (!exists("ENDPOINT_FILE")) defineConstant("ENDPOINT_FILE", "focal_endpoint.tsv");
     if (!exists("GENOME_LENGTH")) defineConstant("GENOME_LENGTH", 100000);
     if (!exists("MU")) defineConstant("MU", 2e-8);
     if (!exists("TRACT_LENGTH")) defineConstant("TRACT_LENGTH", 500);
     if (!exists("HGT_P_WITHIN")) defineConstant("HGT_P_WITHIN", 0.02);
-    if (!exists("HGT_P_CROSS")) defineConstant("HGT_P_CROSS", 0.0);
     if (!exists("N_TERMINAL")) defineConstant("N_TERMINAL", 2500);
     if (!exists("SAMPLE_PER_TERMINAL")) defineConstant("SAMPLE_PER_TERMINAL", 250);
-    if (!exists("EXPERIMENT_GENERATIONS")) defineConstant("EXPERIMENT_GENERATIONS", 400);
-    if (!exists("MONITOR_EVERY")) defineConstant("MONITOR_EVERY", 50);
-
-    if (!exists("MODE")) defineConstant("MODE", 0);
-    if (!exists("S_AB")) defineConstant("S_AB", 0.003);
-    if (!exists("S_CD")) defineConstant("S_CD", 0.003);
-
+    if (!exists("END_TICK")) defineConstant("END_TICK", 30000);
+    if (!exists("MODE")) defineConstant("MODE", 1);
+    if (!exists("FDS_STRENGTH")) defineConstant("FDS_STRENGTH", 0.25);
+    if (!exists("FDS_EPSILON")) defineConstant("FDS_EPSILON", 0.0002);
     if (!exists("A_POSITION")) defineConstant("A_POSITION", 10000);
-    if (!exists("B_POSITION")) defineConstant("B_POSITION", 20000);
-    if (!exists("C_POSITION")) defineConstant("C_POSITION", 60000);
-    if (!exists("D_POSITION")) defineConstant("D_POSITION", 85000);
+    if (!exists("B_POSITION")) defineConstant("B_POSITION", 50000);
 
     defineConstant("L", initializeAncestralNucleotides(REF_FILE));
     if (L != GENOME_LENGTH)
         stop("Reference length does not equal GENOME_LENGTH.");
-
     initializeMutationTypeNuc("m1", 1.0, "f", 0.0);
     m1.convertToSubstitution = F;
     initializeMutationTypeNuc("m2", 1.0, "f", 0.0);
@@ -51,195 +39,109 @@ initialize() {
     initializeGenomicElement(g0, A_POSITION, A_POSITION);
     initializeGenomicElement(g1, A_POSITION + 1, B_POSITION - 1);
     initializeGenomicElement(g0, B_POSITION, B_POSITION);
-    initializeGenomicElement(g1, B_POSITION + 1, C_POSITION - 1);
-    initializeGenomicElement(g0, C_POSITION, C_POSITION);
-    initializeGenomicElement(g1, C_POSITION + 1, D_POSITION - 1);
-    initializeGenomicElement(g0, D_POSITION, D_POSITION);
-    initializeGenomicElement(g1, D_POSITION + 1, L - 1);
+    initializeGenomicElement(g1, B_POSITION + 1, L - 1);
     initializeRecombinationRate(0.0);
 }
 
 function (logical$) hasMutation(o<Individual>$ ind, integer$ mutationID) {
-    if (mutationID < 0)
-        return F;
-    ids = ind.haplosomes[0].mutations.id;
-    return any(ids == mutationID);
+    return any(ind.haplosomes[0].mutations.id == mutationID);
 }
 
-function (object<Mutation>) seedFocalLoci(void) {
-    allPositions = c(A_POSITION, B_POSITION, C_POSITION, D_POSITION);
-    if ((size(unique(allPositions)) != 4) | any(allPositions != sort(allPositions)))
-        stop("A-D positions must be unique and ordered A < B < C < D.");
-    if ((allPositions[0] < 0) | (allPositions[3] >= L))
-        stop("A-D positions must lie within the genome.");
-    if ((B_POSITION - A_POSITION) == (D_POSITION - C_POSITION))
-        stop("A-B and C-D distances must differ in this design.");
-    if (any(sim.mutations.position == A_POSITION) | any(sim.mutations.position == B_POSITION) |
-        any(sim.mutations.position == C_POSITION) | any(sim.mutations.position == D_POSITION))
-        stop("The neutral checkpoint contains a mutation at a protected focal position.");
+function (integer$) abState(o<Individual>$ ind) {
+    state = 0;
+    if (hasMutation(ind, asInteger(sim.getValue("A_ID")))) state = state + 2;
+    if (hasMutation(ind, asInteger(sim.getValue("B_ID")))) state = state + 1;
+    return state;
+}
 
-    // Mode 0 retains both neutral truth pairs. Mode 1 seeds only A-B and Mode 2
-    // seeds only C-D. Production populations of 2,500 contain exactly 625
-    // copies of each active two-locus haplotype in Modes 1 and 2.
-    activePositions = allPositions;
-    divisors = c(1, 2, 4, 8);
-    cycleSize = 16;
-    // Order each haplotype immediately before its bitwise complement.  Every
-    // complete pair therefore contributes one ancestral and one derived copy
-    // at every focal locus.  This keeps allele frequencies within one
-    // individual of 0.5 even when a stochastic nonWF population size is not
-    // divisible by the haplotype-cycle size.
-    haplotypeOrder = c(0, 15, 1, 14, 2, 13, 3, 12,
-                       4, 11, 5, 10, 6, 9, 7, 8);
+function (float) targetFrequencies(o<Subpopulation>$ pop) {
+    highClade = (pop.name == "p1") | (pop.name == "p2");
     if (MODE == 1) {
-        activePositions = c(A_POSITION, B_POSITION);
-        divisors = c(1, 2);
-        cycleSize = 4;
-        haplotypeOrder = c(0, 3, 1, 2);
+        if (highClade) return c(0.0225, 0.1275, 0.1275, 0.7225);
+        return c(0.7225, 0.1275, 0.1275, 0.0225);
     }
-    else if (MODE == 2) {
-        activePositions = c(C_POSITION, D_POSITION);
-        divisors = c(1, 2);
-        cycleSize = 4;
-        haplotypeOrder = c(0, 3, 1, 2);
-    }
-
-    for (pop in sim.subpopulations) {
-        shuffled = sample(pop.individuals, pop.individualCount);
-        shuffled.tag = haplotypeOrder[integerMod(seqAlong(shuffled), cycleSize)];
-    }
-
-    allIndividuals = sim.subpopulations.individuals;
-    for (i in seqAlong(activePositions)) {
-        states = integerMod(asInteger(allIndividuals.tag / divisors[i]), 2);
-        carriers = allIndividuals[states == 1];
-        targets = carriers.haplosomesNonNull;
-        ancestral = sim.chromosome.ancestralNucleotides(activePositions[i], activePositions[i]);
-        derived = "A";
-        if (ancestral == "A")
-            derived = "C";
-        focal = targets[0].addNewMutation(m2, 0.0, activePositions[i],
-            originSubpop=NULL, nucleotide=derived);
-        if (size(targets) > 1)
-            targets[1:(size(targets) - 1)].addMutations(focal);
-    }
-    allIndividuals.tag = 0;
-
-    loci = sim.mutationsOfType(m2);
-    if (size(loci) != size(activePositions))
-        stop("Unexpected number of seeded focal mutations.");
-    return loci[order(loci.position)];
+    if (highClade) return c(0.25, 0.05, 0.45, 0.25);
+    return c(0.25, 0.45, 0.05, 0.25);
 }
 
-function (void) registerFocalIDs(object<Mutation> loci) {
-    sim.setValue("A_ID", -1);
-    sim.setValue("B_ID", -1);
-    sim.setValue("C_ID", -1);
-    sim.setValue("D_ID", -1);
-    for (locus in loci) {
-        if (locus.position == A_POSITION) sim.setValue("A_ID", locus.id);
-        if (locus.position == B_POSITION) sim.setValue("B_ID", locus.id);
-        if (locus.position == C_POSITION) sim.setValue("C_ID", locus.id);
-        if (locus.position == D_POSITION) sim.setValue("D_ID", locus.id);
-    }
-}
-
-function (void) writeSelectedLoci(object<Mutation> loci) {
-    labels = c("A", "B", "C", "D");
-    positions = c(A_POSITION, B_POSITION, C_POSITION, D_POSITION);
-    design = "balanced_16_haplotype_cycle";
-    activePair = "AB_and_CD_neutral";
-    if (MODE == 1) {
-        design = "balanced_four_haplotype_cycle";
-        activePair = "AB";
-    }
-    else if (MODE == 2) {
-        design = "balanced_four_haplotype_cycle";
-        activePair = "CD";
-    }
-
-    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeded\tactive_pair\tseeding_design\tglobal_frequency\tp1_frequency\tp2_frequency\tp3_frequency\tp4_frequency\n";
-    writeFile(LOCI_FILE, header, append=F);
-    for (i in 0:3) {
-        focal = loci[loci.position == positions[i]];
-        if (size(focal) == 0) {
-            line = labels[i] + "\tNA\t" + positions[i] + "\t.\tfalse\t" + activePair +
-                   "\tnot_seeded_for_mode\t0\t0\t0\t0\t0\n";
-        }
-        else {
-            fg = sim.mutationFrequencies(NULL, focal);
-            f1 = sim.mutationFrequencies(p1, focal);
-            f2 = sim.mutationFrequencies(p2, focal);
-            f3 = sim.mutationFrequencies(p3, focal);
-            f4 = sim.mutationFrequencies(p4, focal);
-            line = labels[i] + "\t" + focal.id + "\t" + positions[i] + "\t" +
-                   focal.nucleotide + "\ttrue\t" + activePair + "\t" + design + "\t" +
-                   fg + "\t" + f1 + "\t" + f2 + "\t" + f3 + "\t" + f4 + "\n";
-        }
-        writeFile(LOCI_FILE, line, append=T);
-    }
-}
-
-function (float$) experimentalLogFitness(o<Individual>$ ind, o<Subpopulation>$ pop) {
-    if (MODE == 0)
-        return 0.0;
-
-    if (MODE == 1) {
-        hasA = hasMutation(ind, asInteger(sim.getValue("A_ID")));
-        hasB = hasMutation(ind, asInteger(sim.getValue("B_ID")));
-        if (hasA != hasB)
-            return -S_AB;
-        return 0.0;
-    }
-
-    hasC = hasMutation(ind, asInteger(sim.getValue("C_ID")));
-    hasD = hasMutation(ind, asInteger(sim.getValue("D_ID")));
-    lineageSign = -1.0;
-    if ((pop.name == "p1") | (pop.name == "p2"))
-        lineageSign = 1.0;
-    return lineageSign * S_CD * (asInteger(hasC) + asInteger(hasD));
-}
-
-function (integer) pairCounts(o<Subpopulation>$ pop, integer$ firstID, integer$ secondID) {
+function (integer) pairCounts(o<Individual> individuals) {
     counts = integer(4);
-    for (ind in pop.individuals) {
-        first = hasMutation(ind, firstID);
-        second = hasMutation(ind, secondID);
-        state = 0;
-        if (first) state = state + 2;
-        if (second) state = state + 1;
+    for (ind in individuals) {
+        state = abState(ind);
         counts[state] = counts[state] + 1;
     }
     return counts;
 }
 
-function (void) writeMonitor(void) {
-    if (!asLogical(sim.getValue("monitor_header"))) {
-        header = "tick\texperimental_generation\tmode\tcross_hgt_probability\tpopulation\tn\tAB_00\tAB_01\tAB_10\tAB_11\tCD_00\tCD_01\tCD_10\tCD_11\n";
-        writeFile(MONITOR_FILE, header, append=F);
-        sim.setValue("monitor_header", T);
-    }
+function (object<Mutation>) seedFocalLoci(void) {
+    if (!((0 <= A_POSITION) & (A_POSITION < B_POSITION) & (B_POSITION < L)))
+        stop("Require 0 <= A_POSITION < B_POSITION < genome length.");
+    if (any(sim.mutations.position == A_POSITION) | any(sim.mutations.position == B_POSITION))
+        stop("The checkpoint contains a mutation at A or B.");
 
-    elapsed = community.tick - asInteger(sim.getValue("start_tick"));
     for (pop in sim.subpopulations) {
-        ab = pairCounts(pop, asInteger(sim.getValue("A_ID")), asInteger(sim.getValue("B_ID")));
-        cd = pairCounts(pop, asInteger(sim.getValue("C_ID")), asInteger(sim.getValue("D_ID")));
-        line = community.tick + "\t" + elapsed + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" + pop.name + "\t" +
-               pop.individualCount + "\t" + ab[0] + "\t" + ab[1] + "\t" + ab[2] + "\t" + ab[3] + "\t" +
-               cd[0] + "\t" + cd[1] + "\t" + cd[2] + "\t" + cd[3] + "\n";
-        writeFile(MONITOR_FILE, line, append=T);
+        shuffled = sample(pop.individuals, pop.individualCount);
+        haplotypeOrder = c(0, 3, 1, 2);
+        shuffled.tag = haplotypeOrder[integerMod(seqAlong(shuffled), 4)];
+    }
+    allIndividuals = sim.subpopulations.individuals;
+    positions = c(A_POSITION, B_POSITION);
+    for (i in 0:1) {
+        if (i == 0)
+            carriers = allIndividuals[allIndividuals.tag >= 2];
+        else
+            carriers = allIndividuals[integerMod(allIndividuals.tag, 2) == 1];
+        targets = carriers.haplosomesNonNull;
+        ancestral = sim.chromosome.ancestralNucleotides(positions[i], positions[i]);
+        derived = "A";
+        if (ancestral == "A") derived = "C";
+        focal = targets[0].addNewMutation(m2, 0.0, positions[i],
+            originSubpop=NULL, nucleotide=derived);
+        if (size(targets) > 1)
+            targets[1:(size(targets) - 1)].addMutations(focal);
+    }
+    allIndividuals.tag = 0;
+    loci = sim.mutationsOfType(m2);
+    if (size(loci) != 2)
+        stop("Expected exactly two seeded focal mutations.");
+    return loci[order(loci.position)];
+}
+
+function (void) writeSelectedLoci(object<Mutation> loci) {
+    header = "label\tmutation_id\tposition\tderived_nucleotide\tseeded_frequency\tmode\n";
+    writeFile(LOCI_FILE, header, append=F);
+    labels = c("A", "B");
+    for (i in 0:1) {
+        locus = loci[i];
+        line = labels[i] + "\t" + locus.id + "\t" + locus.position + "\t" +
+               locus.nucleotide + "\t" + sim.mutationFrequencies(NULL, locus) + "\t" + MODE + "\n";
+        writeFile(LOCI_FILE, line, append=T);
+    }
+}
+
+function (void) writeEndpoint(void) {
+    header = "tick\tmode\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tcount_00\tcount_01\tcount_10\tcount_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\n";
+    writeFile(ENDPOINT_FILE, header, append=F);
+    for (pop in sim.subpopulations) {
+        counts = pairCounts(pop.individuals);
+        freqs = counts / pop.individualCount;
+        target = targetFrequencies(pop);
+        line = community.tick + "\t" + MODE + "\t" + pop.name + "\t" + pop.individualCount;
+        for (value in target) line = line + "\t" + value;
+        for (value in counts) line = line + "\t" + value;
+        for (value in freqs) line = line + "\t" + value;
+        writeFile(ENDPOINT_FILE, line + "\n", append=T);
     }
 }
 
 function (void) finishRun(void) {
+    writeEndpoint();
     sampled = NULL;
     for (pop in sim.subpopulations) {
-        n = min(SAMPLE_PER_TERMINAL, pop.individualCount);
-        draw = pop.sampleIndividuals(n);
+        draw = pop.sampleIndividuals(min(SAMPLE_PER_TERMINAL, pop.individualCount));
         if (isNULL(sampled)) sampled = draw;
         else sampled = c(sampled, draw);
     }
-
     writeFile(SAMPLE_FILE, "vcf_label\tanalysis_label\tpopulation\tpedigree_id\tindividual_index\n", append=F);
     for (ind in sampled) {
         vcfLabel = "p" + ind.subpopulation.id + ":i" + ind.index;
@@ -247,7 +149,6 @@ function (void) finishRun(void) {
         line = vcfLabel + "\t" + analysisLabel + "\t" + ind.subpopulation.name + "\t" + ind.pedigreeID + "\t" + ind.index + "\n";
         writeFile(SAMPLE_FILE, line, append=T);
     }
-
     sim.treeSeqRememberIndividuals(sampled);
     sim.treeSeqOutput(TREE_OUT);
     sampled.outputIndividualsToVCF(filePath=VCF_OUT, simplifyNucleotides=T);
@@ -256,17 +157,9 @@ function (void) finishRun(void) {
 
 reproduction() {
     for (rep in 0:1) {
-        u = runif(1);
         donor = NULL;
-
-        if (u < HGT_P_CROSS) {
-            otherPops = sim.subpopulations[sim.subpopulations != subpop];
-            if (size(otherPops) > 0)
-                donor = sample(otherPops.individuals, 1).haplosomes[0];
-        }
-        else if ((u < (HGT_P_CROSS + HGT_P_WITHIN)) & (subpop.individualCount > 1))
+        if ((runif(1) < HGT_P_WITHIN) & (subpop.individualCount > 1))
             donor = subpop.sampleIndividuals(1, exclude=individual).haplosomes[0];
-
         if (isNULL(donor))
             subpop.addCloned(individual);
         else {
@@ -280,60 +173,51 @@ reproduction() {
 }
 
 s1 1 early() {
-    if (!((MODE == 0) | (MODE == 1) | (MODE == 2)))
-        stop("MODE must be 0, 1 or 2.");
-    if ((HGT_P_CROSS < 0.0) | (HGT_P_WITHIN < 0.0) |
-        ((HGT_P_CROSS + HGT_P_WITHIN) > 1.0))
-        stop("HGT probabilities must be non-negative and sum to at most one.");
+    if (!((MODE == 1) | (MODE == 2))) stop("MODE must be 1 or 2.");
+    if ((FDS_STRENGTH <= 0.0) | (FDS_EPSILON <= 0.0))
+        stop("Frequency-dependence parameters must be positive.");
     sim.readFromPopulationFile(CHECKPOINT_FILE);
     if (size(sim.subpopulations) != 4)
-        stop("Checkpoint must contain exactly four terminal populations.");
-
+        stop("Checkpoint must contain p1-p4.");
+    if (END_TICK <= community.tick)
+        stop("END_TICK must be later than the checkpoint tick.");
     loci = seedFocalLoci();
-    registerFocalIDs(loci);
+    sim.setValue("A_ID", loci[loci.position == A_POSITION].id);
+    sim.setValue("B_ID", loci[loci.position == B_POSITION].id);
     writeSelectedLoci(loci);
-
     sim.setValue("loaded", T);
-    sim.setValue("start_tick", community.tick);
-    sim.setValue("end_tick", community.tick + EXPERIMENT_GENERATIONS);
-    sim.setValue("monitor_header", F);
-    community.rescheduleScriptBlock(s2, start=community.tick + 1,
-        end=community.tick + EXPERIMENT_GENERATIONS);
-    community.rescheduleScriptBlock(s3, start=community.tick + 1,
-        end=community.tick + EXPERIMENT_GENERATIONS);
-    writeMonitor();
+    community.rescheduleScriptBlock(s2, start=community.tick + 1, end=END_TICK);
+    community.rescheduleScriptBlock(s3, start=community.tick + 1, end=END_TICK);
 }
 
 s2 2 early() {
-    if (isNULL(sim.getValue("loaded")))
-        return;
-
+    if (isNULL(sim.getValue("loaded"))) return;
     for (pop in sim.subpopulations) {
         adults = pop.individuals[pop.individuals.age > 0];
-        if (size(adults) > 0)
-            adults.fitnessScaling = 0.0;
-
+        if (size(adults) > 0) adults.fitnessScaling = 0.0;
         juveniles = pop.individuals[pop.individuals.age == 0];
-        if (size(juveniles) == 0)
-            next;
+        if (size(juveniles) == 0) next;
 
+        states = integer(size(juveniles));
+        counts = integer(4);
+        for (i in seqAlong(juveniles)) {
+            state = abState(juveniles[i]);
+            states[i] = state;
+            counts[state] = counts[state] + 1;
+        }
+        freqs = counts / size(juveniles);
+        target = targetFrequencies(pop);
+        stateLogWeights = FDS_STRENGTH * log((target + FDS_EPSILON) / (freqs + FDS_EPSILON));
+        stateLogWeights = stateLogWeights - sum(freqs * stateLogWeights);
         weights = float(size(juveniles));
         for (i in seqAlong(juveniles))
-            weights[i] = exp(experimentalLogFitness(juveniles[i], pop));
-
+            weights[i] = exp(stateLogWeights[states[i]]);
         scale = N_TERMINAL / sum(weights);
         juveniles.fitnessScaling = pmin(1.0, weights * scale);
     }
 }
 
 s3 2 late() {
-    if (isNULL(sim.getValue("loaded")))
-        return;
-
-    elapsed = community.tick - asInteger(sim.getValue("start_tick"));
-    if ((elapsed > 0) & (integerMod(elapsed, MONITOR_EVERY) == 0))
-        writeMonitor();
-
-    if (community.tick >= asInteger(sim.getValue("end_tick")))
+    if (!isNULL(sim.getValue("loaded")) & (community.tick >= END_TICK))
         finishRun();
 }

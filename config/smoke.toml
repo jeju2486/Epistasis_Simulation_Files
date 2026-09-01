@@ -6,8 +6,7 @@ manifest_root = "manifests_smoke"
 
 [design]
 replicates = 1
-modes = [0, 1, 2]
-cross_hgt_probabilities = [0.0]
+modes = [1, 2]
 master_seed = 8675309
 
 [genome]
@@ -22,22 +21,18 @@ ancestral_size = 200
 clade_size = 100
 terminal_size = 50
 sample_per_terminal = 10
-ancestral_generations = 500
-deep_clade_generations = 50
-terminal_generations = 50
+deep_split_tick = 20
+terminal_split_tick = 40
+end_tick = 50
 
 [loci]
 a_position = 1000
-b_position = 2000
-c_position = 6000
-d_position = 8500
+b_position = 5000
 
-[experiment]
-generations = [10]
-s_ab = 0.01
-s_cd = 0.015
-monitor_every = 5
+[frequency_dependence]
+strength = 0.25
+epsilon = 0.01
 
 [postprocess]
 ancestral_ne = 200
-oracle_tree_position = 5000
+tree_position = 9000

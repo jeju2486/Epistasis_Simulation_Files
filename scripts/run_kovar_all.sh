@@ -2,31 +2,17 @@
 set -euo pipefail
 
 MANIFEST="${MANIFEST:-manifests/cases.tsv}"
-JOBS="${JOBS:-1}"
-THREADS_PER_CASE="${THREADS_PER_CASE:-4}"
-TREE_THREADS="${TREE_THREADS:-1}"
-TREE_MODE="${TREE_MODE:-oracle}"
+JOBS="${JOBS:-5}"
+THREADS_PER_CASE="${THREADS_PER_CASE:-1}"
 MIN_MAF="${MIN_MAF:-0.05}"
 MIN_CELL_COUNT="${MIN_CELL_COUNT:-5}"
-SPA_MODE="${SPA_MODE:-off}"
-FULL_REFIT_P="${FULL_REFIT_P:-0}"
-WORKER_CHUNK_SIZE="${WORKER_CHUNK_SIZE:-1}"
-PREDICTOR_BATCH_SIZE="${PREDICTOR_BATCH_SIZE:-256}"
+SPA_MODE="${SPA_MODE:-auto}"
 
-python3 scripts/run_kovar_manifest.py \
-  --manifest "$MANIFEST" \
-  --jobs "$JOBS" \
-  --threads-per-case "$THREADS_PER_CASE" \
-  --tree-threads "$TREE_THREADS" \
-  --tree-mode "$TREE_MODE" \
-  --min-maf "$MIN_MAF" \
-  --min-cell-count "$MIN_CELL_COUNT" \
-  --spa-mode "$SPA_MODE" \
-  --full-refit-p "$FULL_REFIT_P" \
-  --worker-chunk-size "$WORKER_CHUNK_SIZE" \
-  --predictor-batch-size "$PREDICTOR_BATCH_SIZE" \
-  --max-pairs 0
-
-python3 scripts/plot_kovar.py \
-  --manifest "$MANIFEST" \
-  --tree-mode "$TREE_MODE"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+python3 scripts/run_kovar_manifest.py --manifest "$MANIFEST" \
+  --jobs "$JOBS" --threads-per-case "$THREADS_PER_CASE" \
+  --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
+python3 scripts/plot_kovar.py --manifest "$MANIFEST"
