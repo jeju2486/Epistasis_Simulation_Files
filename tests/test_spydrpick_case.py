@@ -8,10 +8,16 @@ from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from spydrpick_case import normalize_edges  # noqa: E402
+from spydrpick_case import normalize_edges, output_name  # noqa: E402
 
 
 class SpydrPickSummaryTests(unittest.TestCase):
+    def test_weighting_modes_have_distinct_output_names(self) -> None:
+        self.assertEqual(output_name("default"), "spydrpick_all_pairs")
+        self.assertEqual(output_name("none"), "spydrpick_all_pairs_unweighted")
+        with self.assertRaisesRegex(ValueError, "unknown sample-reweighting mode"):
+            output_name("invalid")
+
     def test_all_pairs_are_zero_based_and_retain_physical_distance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

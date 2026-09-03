@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import argparse
 import sys
 import tempfile
 import unittest
@@ -9,10 +10,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kovar_inputs import materialize_pairs, write_binary_fasta, write_maf_filtered_binary_fasta  # noqa: E402
-from run_kovar_case import require  # noqa: E402
+from run_kovar_case import requested_settings, require  # noqa: E402
 
 
 class KovarInputTests(unittest.TestCase):
+    def test_minimum_cell_count_zero_is_part_of_restart_signature(self) -> None:
+        settings = requested_settings(argparse.Namespace(
+            min_maf=0.05, min_cell_count=0, spa_mode="auto"
+        ))
+        self.assertEqual(settings["min_cell_count"], 0)
+        self.assertEqual(settings["candidate_source"],
+                         "spydrpick_all_pairs_default_weighting")
+
     def test_empty_success_marker_is_valid(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / "_SUCCESS"

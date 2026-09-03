@@ -10,7 +10,7 @@ SPYDRPICK_THREADS_PER_CASE="${SPYDRPICK_THREADS_PER_CASE:-1}"
 KOVAR_JOBS="${KOVAR_JOBS:-5}"
 KOVAR_THREADS_PER_CASE="${KOVAR_THREADS_PER_CASE:-1}"
 MIN_MAF="${MIN_MAF:-0.05}"
-MIN_CELL_COUNT="${MIN_CELL_COUNT:-5}"
+MIN_CELL_COUNT="${MIN_CELL_COUNT:-0}"
 SPA_MODE="${SPA_MODE:-auto}"
 
 cd "$REPO_ROOT"
@@ -39,10 +39,13 @@ python3 scripts/run_manifest.py --manifest "$CASE_MANIFEST" \
   --stage case --jobs "$CASE_JOBS"
 python3 scripts/show_status.py "$CHECKPOINT_MANIFEST" "$CASE_MANIFEST"
 
-python3 scripts/run_spydrpick_manifest.py --manifest "$CASE_MANIFEST" \
-  --jobs "$SPYDRPICK_JOBS" --threads-per-case "$SPYDRPICK_THREADS_PER_CASE" \
-  --min-maf "$MIN_MAF"
-python3 scripts/plot_spydrpick.py --manifest "$CASE_MANIFEST"
+for SAMPLE_REWEIGHTING in default none; do
+  python3 scripts/run_spydrpick_manifest.py --manifest "$CASE_MANIFEST" \
+    --jobs "$SPYDRPICK_JOBS" --threads-per-case "$SPYDRPICK_THREADS_PER_CASE" \
+    --min-maf "$MIN_MAF" --sample-reweighting "$SAMPLE_REWEIGHTING"
+  python3 scripts/plot_spydrpick.py --manifest "$CASE_MANIFEST" \
+    --sample-reweighting "$SAMPLE_REWEIGHTING"
+done
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"

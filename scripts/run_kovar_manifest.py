@@ -34,7 +34,7 @@ def main() -> None:
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--threads-per-case", type=int, default=1)
     parser.add_argument("--min-maf", type=float, default=0.05)
-    parser.add_argument("--min-cell-count", type=int, default=5)
+    parser.add_argument("--min-cell-count", type=int, default=0)
     parser.add_argument("--spa-mode", choices=("off", "auto", "always"), default="auto")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

@@ -86,11 +86,12 @@ quality-control review.
 ## Analysis contract
 
 - All loci with MAF at least 0.05 enter one shared A/C binary alignment.
-- SpydrPick uses its default sample weighting, no ARACNE, zero MI threshold, and
-  returns every eligible unordered pair.
+- SpydrPick is run twice on the same filtered alignment: once with its default
+  sample weighting and once with `--no-sample-reweighting`. Both runs use no
+  ARACNE, a zero MI threshold, and return every eligible unordered pair.
 - KOVAR receives every eligible unordered pair as a two-column `u/v` file. Truth
   labels are never candidate inputs.
-- KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 5`, and
+- KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 0`, and
   `--spa-mode auto`.
 - The rooted covariate tree is the simulation genealogy at the predeclared neutral
   position 90 kb. It is exact locally but remains a single-tree approximation for
@@ -142,8 +143,9 @@ The final command must print `KO-Variation 0.8.3`. Then return to this repositor
 
 ## Run five jobs at a time
 
-This command runs simulation, supplementary SpydrPick, primary KOVAR, and plots.
-Stages remain ordered, while up to five cases run concurrently inside each stage.
+This command runs simulation, both SpydrPick weighting variants, primary KOVAR,
+and plots. Stages remain ordered, while up to five cases run concurrently inside
+each stage.
 
 ```bash
 CHECKPOINT_JOBS=5 \
@@ -169,9 +171,12 @@ JOBS=5 THREADS_PER_CASE=1 bash scripts/run_spydrpick_all.sh
 JOBS=5 THREADS_PER_CASE=1 bash scripts/run_kovar_all.sh
 ```
 
-Completed simulation and SpydrPick directories are skipped using `_SUCCESS`.
-Interrupted KOVAR scans resume from `.kovar_checkpoint`. Re-running the full
-pipeline is therefore the normal restart procedure.
+Completed simulation and per-weighting SpydrPick directories are skipped using
+`_SUCCESS`. Interrupted KOVAR scans resume from `.kovar_checkpoint` when their
+recorded analysis settings match. A completed or interrupted KOVAR directory made
+with different settings is archived before recomputation. Re-running the full
+pipeline is therefore the normal restart procedure; it does not repeat successful
+neutral checkpoints or SLiM continuations.
 
 For a wiring-only smoke test:
 
@@ -206,7 +211,9 @@ Important per-case outputs include:
 - `focal_endpoint.tsv`: target and observed A-B state frequencies at sampling;
 - `selected_loci.tsv`: focal positions, mutation identifiers, mode, and cross-HGT;
 - `simulation_tree.nwk`: rooted simulation genealogy at 90 kb;
-- `spydrpick_all_pairs/mi_vs_distance.png` and MI summaries;
+- `spydrpick_all_pairs/mi_vs_distance.png`: default-weighted MI and summaries;
+- `spydrpick_all_pairs_unweighted/mi_vs_distance.png`: unweighted MI sensitivity
+  analysis and summaries;
 - `kovar_v083_simulation_tree/kovar_p_vs_distance.png` and distance-stratified QQ plot;
 - KOVAR convergence and runtime diagnostics in `response_models.tsv` and
   `execution_metadata.tsv`.
@@ -214,6 +221,7 @@ Important per-case outputs include:
   method-specific ranks for evaluation only.
 
 Across-case focal tables and mode-by-HGT plots are written below
-`results/spydrpick_all_pairs/` and `results/kovar_v083_simulation_tree/`.
+`results/spydrpick_all_pairs/`, `results/spydrpick_all_pairs_unweighted/`, and
+`results/kovar_v083_simulation_tree/`.
 The lineage-confounding category summary, category-count plot, and equal-budget
 comparison plot are written below `results/lineage_confounding/`.

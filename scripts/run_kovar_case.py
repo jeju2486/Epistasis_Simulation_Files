@@ -30,6 +30,26 @@ def archive(path: Path, label: str) -> Path:
     return destination
 
 
+def requested_settings(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "version": "KO-Variation 0.8.3",
+        "min_maf": float(args.min_maf),
+        "min_cell_count": int(args.min_cell_count),
+        "spa_mode": args.spa_mode,
+        "candidate_source": "spydrpick_all_pairs_default_weighting",
+    }
+
+
+def read_json(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def run_case(args: argparse.Namespace) -> None:
     case_dir = args.case_dir.resolve()
     spydrpick = case_dir / "spydrpick_all_pairs"
@@ -51,11 +71,18 @@ def run_case(args: argparse.Namespace) -> None:
         raise RuntimeError(f"expected KO-Variation 0.8.3, got: {version.stdout.strip()}")
 
     output = case_dir / RESULT_NAME
+    request_file = case_dir / f"{RESULT_NAME}.request.json"
+    settings = requested_settings(args)
+    previous_settings = read_json(request_file)
     if (output / "_SUCCESS").exists() and not args.force:
-        print(f"[skip] {output}")
-        return
-    if output.exists() and args.force:
+        if previous_settings == settings:
+            print(f"[skip] {output}")
+            return
+        print(f"[archive] {archive(output, 'settings_mismatch')}")
+    elif output.exists() and args.force:
         print(f"[archive] {archive(output, 'replaced')}")
+    elif output.exists() and previous_settings != settings:
+        print(f"[archive] {archive(output, 'settings_mismatch')}")
 
     pair_count = materialize_pairs(compressed_pairs, pairs)
     records = read_fasta(binary)
@@ -68,6 +95,8 @@ def run_case(args: argparse.Namespace) -> None:
     resume = output.exists() and (output / ".kovar_checkpoint").exists()
     if output.exists() and not resume:
         print(f"[archive] {archive(output, 'incomplete')}")
+
+    request_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
     command = [
         args.kovar, "--fasta", str(binary), "--pairs", str(pairs),
@@ -102,6 +131,7 @@ def run_case(args: argparse.Namespace) -> None:
         "samples": samples, "loci": loci, "pairs": pair_count,
         "candidate_universe": "all_MAF_eligible_unordered_pairs",
         "tree": str(tree), "resumed": resume, "kovar_command": command,
+        **settings,
     }
     (output / "run_metadata.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
@@ -117,7 +147,7 @@ def main() -> None:
     parser.add_argument("--kovar", default=os.environ.get("KOVAR_BIN", "ko-variation"))
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--min-maf", type=float, default=0.05)
-    parser.add_argument("--min-cell-count", type=int, default=5)
+    parser.add_argument("--min-cell-count", type=int, default=0)
     parser.add_argument("--spa-mode", choices=("off", "auto", "always"), default="auto")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

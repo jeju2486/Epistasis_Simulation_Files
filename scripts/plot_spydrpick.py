@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot weighted all-pair SpydrPick MI and the focal A-B result."""
+"""Plot all-pair SpydrPick MI and the focal A-B result."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 
 from simflow import read_tsv, repo_path
-from spydrpick_case import parse_edge
+from spydrpick_case import output_name, parse_edge
 
 
 FOCAL_COLOR = "#D55E00"
@@ -106,15 +106,22 @@ def draw_plot(result: Path, case_id: str, distances: list[float], values: list[f
     plt.close(fig)
 
 
-def plot_case(case_dir: Path, case_id: str, max_background_points: int) -> dict[str, str | int | float]:
-    result = case_dir / "spydrpick_all_pairs"
+def plot_case(
+    case_dir: Path,
+    case_id: str,
+    max_background_points: int,
+    sample_reweighting: str,
+) -> dict[str, str | int | float]:
+    result = case_dir / output_name(sample_reweighting)
     positions = eligible_positions(result / "eligible_loci.tsv")
     focal_columns = focal_pair_columns(case_dir / "selected_loci.tsv", positions)
     distances, values, focal, summaries = read_points(
         result / "spydrpick.edges.gz", focal_columns, max_background_points
     )
     draw_plot(result, case_id, distances, values, focal, None, "mi_vs_distance.png")
-    draw_plot(result, case_id, distances, values, focal, 5.0, "mi_vs_distance_0_5kb.png")
+    obsolete_zoom = result / "mi_vs_distance_0_5kb.png"
+    if obsolete_zoom.exists():
+        obsolete_zoom.unlink()
     with (result / "mi_distance_quantiles.tsv").open("w", encoding="utf-8", newline="") as handle:
         fields = ["bin_start_kb", "bin_end_kb", "n_pairs", "median_mi", "q95_mi", "q99_mi"]
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
@@ -123,6 +130,7 @@ def plot_case(case_dir: Path, case_id: str, max_background_points: int) -> dict[
     return {
         "u_column": focal_columns[0], "v_column": focal_columns[1],
         "physical_distance_kb": focal[0], "mi": focal[1], "mi_order_rank": focal[2],
+        "sample_reweighting": sample_reweighting,
         "eligible_loci": len(positions), "total_pairs": len(positions) * (len(positions) - 1) // 2,
     }
 
@@ -130,18 +138,28 @@ def plot_case(case_dir: Path, case_id: str, max_background_points: int) -> dict[
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="manifests/cases.tsv")
-    parser.add_argument("--output-dir", default="results/spydrpick_all_pairs")
+    parser.add_argument("--output-dir")
+    parser.add_argument(
+        "--sample-reweighting", choices=("default", "none"), default="default"
+    )
     parser.add_argument("--max-background-points", type=int, default=250_000)
     args = parser.parse_args()
     if args.max_background_points < 1:
         parser.error("--max-background-points must be positive")
     aggregate: list[dict[str, str | int | float]] = []
+    result_name = output_name(args.sample_reweighting)
     for case in read_tsv(repo_path(args.manifest)):
         case_dir = repo_path(case["out_dir"])
-        if not (case_dir / "spydrpick_all_pairs" / "_SUCCESS").exists():
+        if not (case_dir / result_name / "_SUCCESS").exists():
             raise SystemExit(f"missing completed SpydrPick result: {case_dir}")
-        aggregate.append({**case, **plot_case(case_dir, case["case_id"], args.max_background_points)})
-    output = repo_path(args.output_dir)
+        aggregate.append({
+            **case,
+            **plot_case(
+                case_dir, case["case_id"], args.max_background_points,
+                args.sample_reweighting,
+            ),
+        })
+    output = repo_path(args.output_dir or f"results/{result_name}")
     output.mkdir(parents=True, exist_ok=True)
     fields = list(aggregate[0]) if aggregate else []
     with (output / "focal_ab.tsv").open("w", encoding="utf-8", newline="") as handle:
@@ -173,7 +191,7 @@ def main() -> None:
             )
         ax.set(xticks=[0, 1, 2], xticklabels=["Mode 0", "Mode 1", "Mode 2"],
                ylabel="A-B mutual information",
-               title="SpydrPick focal result by mode and cross-HGT")
+               title=f"SpydrPick focal result ({args.sample_reweighting} sample weighting)")
         ax.set_ylim(bottom=0)
         ax.grid(axis="y", alpha=0.2)
         ax.legend(frameon=False, fontsize=8)
