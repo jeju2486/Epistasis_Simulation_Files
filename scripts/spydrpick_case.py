@@ -36,7 +36,17 @@ def parse_edge(line: str) -> tuple[int, int, int, int, float]:
     return int(fields[0]), int(fields[1]), int(fields[2]), int(fields[3]), float(fields[4])
 
 
-def normalize_edges(raw: Path, output: Path, positions: list[int]) -> int:
+def pair_index(u: int, v: int, n_loci: int) -> int:
+    u, v = sorted((u, v))
+    if not (0 <= u < v < n_loci):
+        raise ValueError(f"invalid unordered pair: {u}, {v}")
+    return u * (2 * n_loci - u - 1) // 2 + (v - u - 1)
+
+
+def normalize_edges(raw: Path, output: Path, positions: list[int]) -> tuple[int, int]:
+    n_loci = len(positions)
+    expected = n_loci * (n_loci - 1) // 2
+    seen = bytearray(expected)
     count = 0
     previous_mi = float("inf")
     with raw.open(encoding="utf-8") as source, gzip.open(
@@ -51,15 +61,25 @@ def normalize_edges(raw: Path, output: Path, positions: list[int]) -> int:
                 raise ValueError(f"edge column outside alignment: {raw_u}, {raw_v}")
             if mi > previous_mi + 1e-12:
                 raise ValueError("SpydrPick edges are not sorted by descending MI")
+            if mi < -1e-12:
+                raise ValueError(f"SpydrPick returned negative MI: {mi}")
             previous_mi = mi
             u, v = sorted((u, v))
+            index = pair_index(u, v, n_loci)
+            if seen[index]:
+                raise ValueError(f"duplicate SpydrPick pair: {u}, {v}")
+            seen[index] = 1
             distance = abs(positions[v] - positions[u])
             destination.write(f"{u} {v} {distance} {aracne} {mi:.17g}\n")
             count += 1
-    expected = len(positions) * (len(positions) - 1) // 2
-    if count != expected:
-        raise ValueError(f"SpydrPick returned {count} pairs; expected all {expected} pairs")
-    return count
+        # SpydrPick applies a strict MI > threshold comparison. With threshold
+        # zero, exact-zero pairs are therefore absent rather than printed.
+        for u in range(n_loci):
+            for v in range(u + 1, n_loci):
+                if not seen[pair_index(u, v, n_loci)]:
+                    distance = abs(positions[v] - positions[u])
+                    destination.write(f"{u} {v} {distance} 0 0\n")
+    return expected, expected - count
 
 
 def run_case(
@@ -108,12 +128,16 @@ def run_case(
         edges = list(temporary.glob("*.spydrpick_couplings.*-based.*edges"))
         if len(edges) != 1:
             raise RuntimeError(f"expected one SpydrPick edge file, found {len(edges)}")
-        pair_count = normalize_edges(edges[0], temporary / "spydrpick.edges.gz", positions)
+        pair_count, restored_zero_pairs = normalize_edges(
+            edges[0], temporary / "spydrpick.edges.gz", positions
+        )
         edges[0].unlink()
         metadata = {
             "case_dir": str(case_dir), "command": command, "samples": samples,
             "input_loci": input_loci, "eligible_loci": eligible_loci,
             "pairs": pair_count, "min_maf": min_maf,
+            "spydrpick_reported_pairs": pair_count - restored_zero_pairs,
+            "zero_mi_pairs_restored": restored_zero_pairs,
             "sample_reweighting": sample_reweighting, "aracne": False,
         }
         (temporary / "run_metadata.json").write_text(

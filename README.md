@@ -89,6 +89,9 @@ quality-control review.
 - SpydrPick is run twice on the same filtered alignment: once with its default
   sample weighting and once with `--no-sample-reweighting`. Both runs use no
   ARACNE, a zero MI threshold, and return every eligible unordered pair.
+- Because SpydrPick does not print exact-zero-MI pairs at a zero threshold, the
+  wrapper restores only those omitted pairs with MI equal to zero and records
+  their count in `run_metadata.json`.
 - KOVAR receives every eligible unordered pair as a two-column `u/v` file. Truth
   labels are never candidate inputs.
 - KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 0`, and
