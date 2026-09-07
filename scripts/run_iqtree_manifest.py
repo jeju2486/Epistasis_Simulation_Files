@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument("--manifest", default="manifests/cases.tsv")
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--threads-per-case", type=int, default=1)
-    parser.add_argument("--iqtree", default=os.environ.get("IQTREE_BIN", "iqtree2"))
+    parser.add_argument("--iqtree", default=os.environ.get("IQTREE_BIN", "iqtree"))
     parser.add_argument("--model", default="GTR+ASC")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

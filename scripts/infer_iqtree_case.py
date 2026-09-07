@@ -196,7 +196,7 @@ def run_case(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case-dir", required=True, type=Path)
-    parser.add_argument("--iqtree", default=os.environ.get("IQTREE_BIN", "iqtree2"))
+    parser.add_argument("--iqtree", default=os.environ.get("IQTREE_BIN", "iqtree"))
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--model", default="GTR+ASC")
