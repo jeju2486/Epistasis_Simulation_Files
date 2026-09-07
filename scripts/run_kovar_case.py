@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -11,10 +12,14 @@ import subprocess
 import time
 from pathlib import Path
 
+from infer_iqtree_case import RESULT_NAME as IQTREE_RESULT_NAME, ROOTED_TREE_NAME
 from kovar_inputs import materialize_pairs, read_fasta
 
 
-RESULT_NAME = "kovar_v083_simulation_tree"
+def result_name(spa_mode: str) -> str:
+    if spa_mode not in {"off", "auto"}:
+        raise ValueError("KOVAR benchmark SPA mode must be 'off' or 'auto'")
+    return f"kovar_v083_iqtree_spa_{spa_mode}"
 
 
 def require(path: Path, nonempty: bool = True) -> None:
@@ -30,13 +35,25 @@ def archive(path: Path, label: str) -> Path:
     return destination
 
 
-def requested_settings(args: argparse.Namespace) -> dict[str, object]:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def requested_settings(
+    args: argparse.Namespace, tree_sha256: str | None = None
+) -> dict[str, object]:
     return {
         "version": "KO-Variation 0.8.3",
         "min_maf": float(args.min_maf),
         "min_cell_count": int(args.min_cell_count),
         "spa_mode": args.spa_mode,
         "candidate_source": "spydrpick_all_pairs_default_weighting",
+        "tree_source": "iqtree_observed_nonfocal_midpoint_rooted",
+        "tree_sha256": tree_sha256,
     }
 
 
@@ -56,10 +73,11 @@ def run_case(args: argparse.Namespace) -> None:
     binary = spydrpick / "all_snps.binary_ac.fa"
     compressed_pairs = spydrpick / "spydrpick.edges.gz"
     pairs = spydrpick / "kovar_pairs.tsv"
-    tree = case_dir / "simulation_tree.nwk"
+    iqtree = case_dir / IQTREE_RESULT_NAME
+    tree = iqtree / ROOTED_TREE_NAME
     for path in (
         case_dir / "_SUCCESS", spydrpick / "_SUCCESS", binary,
-        compressed_pairs, tree,
+        compressed_pairs, iqtree / "_SUCCESS", tree,
     ):
         require(path, nonempty=path.name != "_SUCCESS")
 
@@ -70,9 +88,10 @@ def run_case(args: argparse.Namespace) -> None:
     if version.returncode or version.stdout.strip() != "KO-Variation 0.8.3":
         raise RuntimeError(f"expected KO-Variation 0.8.3, got: {version.stdout.strip()}")
 
-    output = case_dir / RESULT_NAME
-    request_file = case_dir / f"{RESULT_NAME}.request.json"
-    settings = requested_settings(args)
+    output_name = result_name(args.spa_mode)
+    output = case_dir / output_name
+    request_file = case_dir / f"{output_name}.request.json"
+    settings = requested_settings(args, sha256_file(tree))
     previous_settings = read_json(request_file)
     if (output / "_SUCCESS").exists() and not args.force:
         if previous_settings == settings:
@@ -112,7 +131,7 @@ def run_case(args: argparse.Namespace) -> None:
     env = os.environ.copy()
     for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         env.setdefault(variable, "1")
-    log = case_dir / f"{RESULT_NAME}.log"
+    log = case_dir / f"{output_name}.log"
     with log.open("a" if resume else "w", encoding="utf-8") as handle:
         completed = subprocess.run(
             command, cwd=case_dir, env=env, stdout=handle,
@@ -148,7 +167,7 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--min-maf", type=float, default=0.05)
     parser.add_argument("--min-cell-count", type=int, default=0)
-    parser.add_argument("--spa-mode", choices=("off", "auto", "always"), default="auto")
+    parser.add_argument("--spa-mode", choices=("off", "auto"), default="auto")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     if args.threads < 1:

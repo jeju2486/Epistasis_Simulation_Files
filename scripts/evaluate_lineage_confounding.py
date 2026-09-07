@@ -13,7 +13,7 @@ from pathlib import Path
 
 from kovar_inputs import read_fasta
 from plot_spydrpick import eligible_positions, focal_pair_columns
-from run_kovar_case import RESULT_NAME
+from run_kovar_case import result_name
 from simflow import read_tsv, repo_path
 from spydrpick_case import parse_edge
 
@@ -155,10 +155,12 @@ def kovar_top_threshold(path: Path) -> tuple[float, int]:
     return smallest[-1], finite_count
 
 
-def evaluate_case(case: dict[str, str], output_name: str) -> list[dict[str, object]]:
+def evaluate_case(
+    case: dict[str, str], output_name: str, spa_mode: str
+) -> list[dict[str, object]]:
     case_dir = repo_path(case["out_dir"])
     spydrpick = case_dir / "spydrpick_all_pairs"
-    kovar = case_dir / RESULT_NAME
+    kovar = case_dir / result_name(spa_mode)
     for marker in (case_dir / "_SUCCESS", spydrpick / "_SUCCESS", kovar / "_SUCCESS"):
         if not marker.exists():
             raise FileNotFoundError(f"missing completed stage: {marker}")
@@ -257,7 +259,7 @@ def evaluate_case(case: dict[str, str], output_name: str) -> list[dict[str, obje
         pairs = int(summary["pairs"])
         finite = int(summary["finite_kovar"])
         output_rows.append({
-            **case, "category": category, "pairs": pairs,
+            **case, "spa_mode": spa_mode, "category": category, "pairs": pairs,
             "mean_spydrpick_mi": float(summary["mi_sum"]) / pairs,
             "spydrpick_top_1pct": int(summary["spydrpick_top_1pct"]),
             "spydrpick_top_1pct_rate": int(summary["spydrpick_top_1pct"]) / pairs,
@@ -337,14 +339,20 @@ def plot_summary(rows: list[dict[str, object]], output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="manifests/cases.tsv")
-    parser.add_argument("--output-dir", default="results/lineage_confounding")
-    parser.add_argument("--pair-metrics-name", default="lineage_pair_metrics.tsv.gz")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--pair-metrics-name")
+    parser.add_argument("--spa-mode", choices=("off", "auto"), required=True)
     args = parser.parse_args()
+    analysis_name = result_name(args.spa_mode)
+    pair_metrics_name = (
+        args.pair_metrics_name
+        or f"lineage_pair_metrics_iqtree_spa_{args.spa_mode}.tsv.gz"
+    )
     rows: list[dict[str, object]] = []
     for case in read_tsv(repo_path(args.manifest)):
         print(f"[evaluate] {case['case_id']}")
-        rows.extend(evaluate_case(case, args.pair_metrics_name))
-    output = repo_path(args.output_dir)
+        rows.extend(evaluate_case(case, pair_metrics_name, args.spa_mode))
+    output = repo_path(args.output_dir or f"results/lineage_confounding_{analysis_name}")
     output.mkdir(parents=True, exist_ok=True)
     fields = list(rows[0]) if rows else []
     with (output / "pair_category_summary.tsv").open("w", encoding="utf-8", newline="") as handle:

@@ -94,11 +94,15 @@ quality-control review.
   their count in `run_metadata.json`.
 - KOVAR receives every eligible unordered pair as a two-column `u/v` file. Truth
   labels are never candidate inputs.
-- KOVAR 0.8.3 uses `--min-maf 0.05`, explicit `--min-cell-count 0`, and
-  `--spa-mode auto`.
-- The rooted covariate tree is the simulation genealogy at the predeclared neutral
-  position 90 kb. It is exact locally but remains a single-tree approximation for
-  a genome whose local genealogies are altered by HGT.
+- IQ-TREE 2 infers one tree per case from the observed nucleotide SNP alignment.
+  A and B are excluded to prevent the planted pair from directly determining its
+  own covariance correction; invariant columns are removed and `GTR+ASC` is used.
+  The reversible-model tree is midpoint-rooted before KOVAR reads it.
+- KOVAR 0.8.3 uses `--min-maf 0.05` and explicit `--min-cell-count 0`. Every
+  case is run separately with `--spa-mode off` and `--spa-mode auto`, allowing
+  normal-score and automatic-SPA calibration to be compared directly.
+- The 90-kb simulation genealogy is retained as an oracle diagnostic output, but
+  it is no longer the tree supplied to KOVAR.
 - Lineage labels and covariance-component categories are used only after both
   methods finish. They are never supplied as candidate or model inputs.
 
@@ -132,6 +136,13 @@ conda env create -f environment.yml
 conda activate epistasis-sim
 ```
 
+For an existing environment, install the newly required IQ-TREE and Biopython
+dependencies with:
+
+```bash
+conda env update -f environment.yml --prune
+```
+
 Install KOVAR 0.8.3 in the same environment:
 
 ```bash
@@ -146,15 +157,17 @@ The final command must print `KO-Variation 0.8.3`. Then return to this repositor
 
 ## Run five jobs at a time
 
-This command runs simulation, both SpydrPick weighting variants, primary KOVAR,
-and plots. Stages remain ordered, while up to five cases run concurrently inside
-each stage.
+This command runs simulation, per-case IQ-TREE inference, both SpydrPick weighting
+variants, KOVAR with SPA off and auto, and plots. Stages remain ordered, while up
+to five cases run concurrently inside each stage.
 
 ```bash
 CHECKPOINT_JOBS=5 \
 CASE_JOBS=5 \
 SPYDRPICK_JOBS=5 \
 SPYDRPICK_THREADS_PER_CASE=1 \
+IQTREE_JOBS=5 \
+IQTREE_THREADS_PER_CASE=1 \
 KOVAR_JOBS=5 \
 KOVAR_THREADS_PER_CASE=1 \
 bash scripts/run_full_pipeline.sh
@@ -170,22 +183,23 @@ Stage-specific commands are:
 
 ```bash
 CHECKPOINT_JOBS=5 CASE_JOBS=5 bash scripts/run_five_replicates.sh
+JOBS=5 THREADS_PER_CASE=1 bash scripts/run_iqtree_all.sh
 JOBS=5 THREADS_PER_CASE=1 bash scripts/run_spydrpick_all.sh
 JOBS=5 THREADS_PER_CASE=1 bash scripts/run_kovar_all.sh
 ```
 
-Completed simulation and per-weighting SpydrPick directories are skipped using
-`_SUCCESS`. Interrupted KOVAR scans resume from `.kovar_checkpoint` when their
-recorded analysis settings match. A completed or interrupted KOVAR directory made
-with different settings is archived before recomputation. Re-running the full
-pipeline is therefore the normal restart procedure; it does not repeat successful
-neutral checkpoints or SLiM continuations.
+Completed simulation, IQ-TREE, and per-weighting SpydrPick directories are skipped
+using `_SUCCESS`. Interrupted KOVAR scans resume from `.kovar_checkpoint` when
+their recorded tree source and analysis settings match. A completed or interrupted
+KOVAR directory made with different settings is archived before recomputation.
+Re-running the full pipeline is therefore the normal restart procedure; it does
+not repeat successful upstream work.
 
 For a wiring-only smoke test:
 
 ```bash
 CONFIG=config/smoke.toml \
-CHECKPOINT_JOBS=1 CASE_JOBS=1 SPYDRPICK_JOBS=1 KOVAR_JOBS=1 \
+CHECKPOINT_JOBS=1 CASE_JOBS=1 IQTREE_JOBS=1 SPYDRPICK_JOBS=1 KOVAR_JOBS=1 \
 bash scripts/run_full_pipeline.sh
 ```
 
@@ -213,18 +227,22 @@ Important per-case outputs include:
 - `focal_monitor.tsv`: every equilibrium check for p1-p4;
 - `focal_endpoint.tsv`: target and observed A-B state frequencies at sampling;
 - `selected_loci.tsv`: focal positions, mutation identifiers, mode, and cross-HGT;
-- `simulation_tree.nwk`: rooted simulation genealogy at 90 kb;
+- `simulation_tree.nwk`: supplementary oracle simulation genealogy at 90 kb;
+- `iqtree_phylogeny/nonfocal_variable_snps.fa`: observed nonfocal SNP alignment;
+- `iqtree_phylogeny/iqtree.treefile`: inferred IQ-TREE ML tree;
+- `iqtree_phylogeny/iqtree_rooted.nwk`: midpoint-rooted tree supplied to KOVAR;
 - `spydrpick_all_pairs/mi_vs_distance.png`: default-weighted MI and summaries;
 - `spydrpick_all_pairs_unweighted/mi_vs_distance.png`: unweighted MI sensitivity
   analysis and summaries;
-- `kovar_v083_simulation_tree/kovar_p_vs_distance.png` and distance-stratified QQ plot;
+- `kovar_v083_iqtree_spa_off/`: normal-score KOVAR results and plots;
+- `kovar_v083_iqtree_spa_auto/`: automatic-SPA KOVAR results and plots;
 - KOVAR convergence and runtime diagnostics in `response_models.tsv` and
-  `execution_metadata.tsv`.
-- `lineage_pair_metrics.tsv.gz`: pair-level covariance decomposition and
-  method-specific ranks for evaluation only.
+  `execution_metadata.tsv`;
+- `lineage_pair_metrics_iqtree_spa_{off,auto}.tsv.gz`: pair-level covariance
+  decomposition and method-specific ranks for evaluation only.
 
 Across-case focal tables and mode-by-HGT plots are written below
 `results/spydrpick_all_pairs/`, `results/spydrpick_all_pairs_unweighted/`, and
-`results/kovar_v083_simulation_tree/`.
-The lineage-confounding category summary, category-count plot, and equal-budget
-comparison plot are written below `results/lineage_confounding/`.
+`results/kovar_v083_iqtree_spa_{off,auto}/`.
+The SPA-specific lineage-confounding summaries are written below
+`results/lineage_confounding_kovar_v083_iqtree_spa_{off,auto}/`.

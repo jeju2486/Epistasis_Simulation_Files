@@ -7,14 +7,18 @@ CHECKPOINT_JOBS="${CHECKPOINT_JOBS:-5}"
 CASE_JOBS="${CASE_JOBS:-5}"
 SPYDRPICK_JOBS="${SPYDRPICK_JOBS:-5}"
 SPYDRPICK_THREADS_PER_CASE="${SPYDRPICK_THREADS_PER_CASE:-1}"
+IQTREE_JOBS="${IQTREE_JOBS:-5}"
+IQTREE_THREADS_PER_CASE="${IQTREE_THREADS_PER_CASE:-1}"
+IQTREE_MODEL="${IQTREE_MODEL:-GTR+ASC}"
+IQTREE_BIN="${IQTREE_BIN:-iqtree2}"
 KOVAR_JOBS="${KOVAR_JOBS:-5}"
 KOVAR_THREADS_PER_CASE="${KOVAR_THREADS_PER_CASE:-1}"
 MIN_MAF="${MIN_MAF:-0.05}"
 MIN_CELL_COUNT="${MIN_CELL_COUNT:-0}"
-SPA_MODE="${SPA_MODE:-auto}"
+SPA_MODES="${SPA_MODES:-off auto}"
 
 cd "$REPO_ROOT"
-for command in python3 slim SpydrPick ko-variation; do
+for command in python3 slim SpydrPick "$IQTREE_BIN" ko-variation; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Missing command in PATH: $command" >&2
     exit 2
@@ -39,6 +43,10 @@ python3 scripts/run_manifest.py --manifest "$CASE_MANIFEST" \
   --stage case --jobs "$CASE_JOBS"
 python3 scripts/show_status.py "$CHECKPOINT_MANIFEST" "$CASE_MANIFEST"
 
+python3 scripts/run_iqtree_manifest.py --manifest "$CASE_MANIFEST" \
+  --jobs "$IQTREE_JOBS" --threads-per-case "$IQTREE_THREADS_PER_CASE" \
+  --iqtree "$IQTREE_BIN" --model "$IQTREE_MODEL"
+
 for SAMPLE_REWEIGHTING in default none; do
   python3 scripts/run_spydrpick_manifest.py --manifest "$CASE_MANIFEST" \
     --jobs "$SPYDRPICK_JOBS" --threads-per-case "$SPYDRPICK_THREADS_PER_CASE" \
@@ -51,10 +59,14 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
-python3 scripts/run_kovar_manifest.py --manifest "$CASE_MANIFEST" \
-  --jobs "$KOVAR_JOBS" --threads-per-case "$KOVAR_THREADS_PER_CASE" \
-  --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
-python3 scripts/plot_kovar.py --manifest "$CASE_MANIFEST"
-python3 scripts/evaluate_lineage_confounding.py --manifest "$CASE_MANIFEST"
+for SPA_MODE in $SPA_MODES; do
+  case "$SPA_MODE" in off|auto) ;; *) echo "Invalid SPA mode: $SPA_MODE" >&2; exit 2 ;; esac
+  python3 scripts/run_kovar_manifest.py --manifest "$CASE_MANIFEST" \
+    --jobs "$KOVAR_JOBS" --threads-per-case "$KOVAR_THREADS_PER_CASE" \
+    --min-maf "$MIN_MAF" --min-cell-count "$MIN_CELL_COUNT" --spa-mode "$SPA_MODE"
+  python3 scripts/plot_kovar.py --manifest "$CASE_MANIFEST" --spa-mode "$SPA_MODE"
+  python3 scripts/evaluate_lineage_confounding.py --manifest "$CASE_MANIFEST" \
+    --spa-mode "$SPA_MODE"
+done
 
-echo "[done] five replicates x three modes x three cross-HGT rates: SLiM -> SpydrPick -> KOVAR 0.8.3 -> lineage evaluation"
+echo "[done] SLiM -> IQ-TREE -> SpydrPick -> KOVAR SPA off/auto -> lineage evaluation"

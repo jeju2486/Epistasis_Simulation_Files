@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kovar_inputs import materialize_pairs, write_binary_fasta, write_maf_filtered_binary_fasta  # noqa: E402
-from run_kovar_case import requested_settings, require  # noqa: E402
+from run_kovar_case import requested_settings, require, result_name  # noqa: E402
 
 
 class KovarInputTests(unittest.TestCase):
@@ -21,6 +21,16 @@ class KovarInputTests(unittest.TestCase):
         self.assertEqual(settings["min_cell_count"], 0)
         self.assertEqual(settings["candidate_source"],
                          "spydrpick_all_pairs_default_weighting")
+        self.assertEqual(
+            settings["tree_source"], "iqtree_observed_nonfocal_midpoint_rooted"
+        )
+        self.assertIsNone(settings["tree_sha256"])
+
+    def test_spa_modes_have_independent_result_directories(self) -> None:
+        self.assertEqual(result_name("off"), "kovar_v083_iqtree_spa_off")
+        self.assertEqual(result_name("auto"), "kovar_v083_iqtree_spa_auto")
+        with self.assertRaises(ValueError):
+            result_name("always")
 
     def test_empty_success_marker_is_valid(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

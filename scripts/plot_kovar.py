@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 
 from plot_spydrpick import FOCAL_COLOR, HGT_COLORS, eligible_positions, focal_pair_columns
-from run_kovar_case import RESULT_NAME
+from run_kovar_case import result_name
 from simflow import read_tsv, repo_path
 
 
@@ -56,7 +56,7 @@ def read_results(table: Path, positions: list[int], focal_columns: tuple[int, in
 
 
 def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict,
-                  max_background_points: int) -> None:
+                  max_background_points: int, spa_mode: str) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -78,7 +78,7 @@ def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict,
                    linewidth=0.9, label="Bonferroni 0.05")
     ax.set(xlabel="Physical distance between SNPs (kb)",
            ylabel="−log10(KOVAR primary p-value)",
-           title=f"KOVAR covariation by genomic distance: {case_id}")
+           title=f"KOVAR IQ-TREE, SPA={spa_mode}: {case_id}")
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
     ax.grid(alpha=0.18, linewidth=0.6)
@@ -87,7 +87,7 @@ def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict,
     plt.close(fig)
 
 
-def plot_qq(result: Path, case_id: str, points: list[dict]) -> None:
+def plot_qq(result: Path, case_id: str, points: list[dict], spa_mode: str) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -106,21 +106,23 @@ def plot_qq(result: Path, case_id: str, points: list[dict]) -> None:
         ax.plot(x, y, marker=".", markersize=2.5, linewidth=0.7, label=f"{label} (n={len(observed)})")
     ax.plot([0, maximum], [0, maximum], color="#333333", linestyle="--", linewidth=0.8)
     ax.set(xlabel="Expected −log10(p)", ylabel="Observed −log10(p)",
-           title=f"KOVAR QQ by physical distance: {case_id}")
+           title=f"KOVAR IQ-TREE QQ, SPA={spa_mode}: {case_id}")
     ax.grid(alpha=0.18, linewidth=0.6)
     ax.legend(frameon=False, fontsize=8)
     fig.savefig(result / "kovar_qq_by_distance.png", dpi=220)
     plt.close(fig)
 
 
-def plot_case(case_dir: Path, case_id: str, max_background_points: int) -> tuple[dict, list[dict]]:
-    result = case_dir / RESULT_NAME
+def plot_case(
+    case_dir: Path, case_id: str, max_background_points: int, spa_mode: str
+) -> tuple[dict, list[dict]]:
+    result = case_dir / result_name(spa_mode)
     spydrpick = case_dir / "spydrpick_all_pairs"
     positions = eligible_positions(spydrpick / "eligible_loci.tsv")
     focal_columns = focal_pair_columns(case_dir / "selected_loci.tsv", positions)
     points, focal = read_results(result / "ko_variation.tsv", positions, focal_columns)
-    plot_distance(result, case_id, points, focal, max_background_points)
-    plot_qq(result, case_id, points)
+    plot_distance(result, case_id, points, focal, max_background_points, spa_mode)
+    plot_qq(result, case_id, points, spa_mode)
     counts = []
     for label in ("0-1 kb", "1-5 kb", "5-20 kb", ">20 kb"):
         subset = [point for point in points if point["bin"] == label]
@@ -137,21 +139,27 @@ def plot_case(case_dir: Path, case_id: str, max_background_points: int) -> tuple
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="manifests/cases.tsv")
-    parser.add_argument("--output-dir", default="results/kovar_v083_simulation_tree")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--spa-mode", choices=("off", "auto"), required=True)
     parser.add_argument("--max-background-points", type=int, default=250_000)
     args = parser.parse_args()
     if args.max_background_points < 1:
         parser.error("--max-background-points must be positive")
     focal_rows: list[dict] = []
     count_rows: list[dict] = []
+    analysis_name = result_name(args.spa_mode)
     for case in read_tsv(repo_path(args.manifest)):
         case_dir = repo_path(case["out_dir"])
-        if not (case_dir / RESULT_NAME / "_SUCCESS").exists():
-            raise SystemExit(f"missing completed KOVAR result: {case_dir / RESULT_NAME}")
-        focal, counts = plot_case(case_dir, case["case_id"], args.max_background_points)
-        focal_rows.append({**case, **focal})
-        count_rows.extend({**case, **row} for row in counts)
-    output = repo_path(args.output_dir)
+        if not (case_dir / analysis_name / "_SUCCESS").exists():
+            raise SystemExit(f"missing completed KOVAR result: {case_dir / analysis_name}")
+        focal, counts = plot_case(
+            case_dir, case["case_id"], args.max_background_points, args.spa_mode
+        )
+        focal_rows.append({**case, "spa_mode": args.spa_mode, **focal})
+        count_rows.extend(
+            {**case, "spa_mode": args.spa_mode, **row} for row in counts
+        )
+    output = repo_path(args.output_dir or f"results/{analysis_name}")
     output.mkdir(parents=True, exist_ok=True)
     for filename, rows in (("focal_ab.tsv", focal_rows), ("significant_by_distance.tsv", count_rows)):
         fields = list(rows[0]) if rows else []
@@ -184,7 +192,7 @@ def main() -> None:
             )
         ax.set(xticks=[0, 1, 2], xticklabels=["Mode 0", "Mode 1", "Mode 2"],
                ylabel="A-B −log10(KOVAR primary p-value)",
-               title="KOVAR focal result by mode and cross-HGT")
+               title=f"KOVAR IQ-TREE focal result, SPA={args.spa_mode}")
         ax.set_ylim(bottom=0)
         ax.grid(axis="y", alpha=0.2)
         ax.legend(frameon=False, fontsize=8)
