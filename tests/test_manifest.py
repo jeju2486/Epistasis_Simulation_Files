@@ -40,8 +40,8 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual({row["cross_hgt_probability"] for row in cases}, {0.0, 0.002, 0.02})
         self.assertEqual(
             {row["regime"] for row in cases},
-            {"balanced_independent_negative_control", "global_high_frequency_independent",
-             "global_high_frequency_dependent"},
+            {"neutral_ld_background", "global_balanced_independent",
+             "global_balanced_dependent"},
         )
         self.assertEqual(cases[0]["out_dir"], "runs/rep_0001/cross_0/mode_0")
         self.assertEqual(cases[0]["case_id"], "rep_0001__cross_0__mode_0")

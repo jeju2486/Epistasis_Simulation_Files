@@ -1,7 +1,7 @@
 [paths]
 reference = "inputs/smoke_reference.fa"
 checkpoint_root = "checkpoints_smoke"
-run_root = "runs_smoke_global_frequency_hgt"
+run_root = "runs_smoke_global_balanced_strong_ab_hgt"
 manifest_root = "manifests_smoke"
 
 [design]

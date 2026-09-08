@@ -1,7 +1,7 @@
 [paths]
 reference = "inputs/reference_100kb.fa"
 checkpoint_root = "checkpoints_100kb_neutral10k_mu2e8_pilot"
-run_root = "runs_100kb_global_frequency_hgt_mu2e8_pilot"
+run_root = "runs_100kb_global_balanced_strong_ab_hgt_mu2e8_pilot"
 manifest_root = "manifests_pilot"
 
 [design]

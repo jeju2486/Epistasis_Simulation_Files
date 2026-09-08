@@ -30,18 +30,21 @@ the rest of the genome, but lineage membership never defines the planted A-B tru
 
 | Mode | Interpretation | 00 | 01 | 10 | 11 | A frequency | B frequency | Odds ratio |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 0 | balanced independent negative control | 0.25 | 0.25 | 0.25 | 0.25 | 0.50 | 0.50 | 1 |
-| 1 | high-1-frequency independent control | 0.0625 | 0.1875 | 0.1875 | 0.5625 | 0.75 | 0.75 | 1 |
-| 2 | high-1-frequency dependent signal | 0.1875 | 0.0625 | 0.0625 | 0.6875 | 0.75 | 0.75 | 33 |
+| 0 | neutral LD-background condition; focal correction off | 0.25* | 0.25* | 0.25* | 0.25* | 0.50* | 0.50* | 1* |
+| 1 | balanced independent control | 0.25 | 0.25 | 0.25 | 0.25 | 0.50 | 0.50 | 1 |
+| 2 | balanced strong dependent signal | 0.45 | 0.05 | 0.05 | 0.45 | 0.50 | 0.50 | 81 |
 
-Modes 1 and 2 deliberately share the same single-locus frequencies. Their focal
-difference is therefore association, rather than a difference in A or B frequency.
-Mode 0 provides a conventional balanced negative control. Expected pooled A-B MI
-is zero in modes 0 and 1 and approximately 0.298 bits in mode 2.
+The asterisks mark mode 0's seeded reference distribution: unlike modes 1 and 2,
+it is not maintained by focal frequency correction. Mode 0 is used to measure the
+neutral/HGT LD background. Modes 1 and 2 deliberately share the same controlled
+single-locus frequencies, so their focal difference is association rather than A
+or B frequency. Expected A-B MI is zero in mode 1 and approximately 0.531 bits
+(`0.368` natural-log units as reported by SpydrPick) in mode 2.
 
 The intended focal result is:
 
-- modes 0 and 1: no systematic focal A-B signal after calibration;
+- mode 0: neutral/HGT background LD without focal frequency correction;
+- mode 1: no systematic focal A-B signal after calibration;
 - mode 2: strong focal A-B signal;
 - increasing cross-HGT: weaker genome-wide population structure, without changing
   the target focal truth.
@@ -65,8 +68,9 @@ The neutral history is shared within each replicate:
 | 10,000 | split into p1-p4, N=2,500 each and save the neutral checkpoint |
 | 10,000 | start each continuation and seed A=10 kb and B=50 kb as 00, 01, 10, 11 at 25% each |
 
-After seeding, SLiM applies a frequency-dependent correction to juveniles. For
-state `h` in population `p`, the log-weight correction is
+After seeding, modes 1 and 2 apply a frequency-dependent correction to juveniles.
+Mode 0 applies density regulation only. For state `h` in population `p`, the
+mode-1/mode-2 log-weight correction is
 
 ```text
 K * log((target[p,h] + epsilon) / (observed[p,h] + epsilon))
@@ -74,14 +78,16 @@ K * log((target[p,h] + epsilon) / (observed[p,h] + epsilon))
 
 with `K=0.25` and `epsilon=0.0002`. This mechanism is a controlled frequency
 equilibrium assay; it is not presented as a literal biological fitness model.
+The explicit 0.05 discordant-cell targets in mode 2 preserve finite `01` and `10`
+counts rather than relying on `epsilon`, which is only a numerical stabilizer.
 
 Every continuation runs for the same fixed duration and is sampled at absolute
 tick 30,000, giving exactly 20,000 post-seeding generations. Starting 1,000 ticks
-after seeding, all four population tables are checked every 100 ticks. The first
-tick at which every cell is within 0.03 of its target for five consecutive checks
-is recorded, but it never terminates the simulation. A case that has not reached
-that criterion by sampling is retained and marked `not_reached_by_sampling` for
-quality-control review.
+after seeding, all four population tables are checked every 100 ticks. In modes 1
+and 2, the first tick at which every cell is within 0.03 of its target for five
+consecutive checks is recorded, but it never terminates the simulation. A
+controlled case that has not reached that criterion by sampling is retained and
+marked `not_reached_by_sampling`; mode 0 is marked `neutral_no_focal_control`.
 
 ## Analysis contract
 
@@ -213,13 +219,15 @@ Five neutral checkpoints are written below
 written as:
 
 ```text
-runs_100kb_global_frequency_hgt_mu2e8/
+runs_100kb_global_balanced_strong_ab_hgt_mu2e8/
   rep_####/
     cross_0|cross_0p002|cross_0p02/
       mode_0|mode_1|mode_2/
 ```
 
 There are no `gen_0300`, `gen_0400`, or other generation subdirectories.
+The new run root deliberately differs from the earlier frequency-target design,
+so restart-safe launchers cannot mistake old completed cases for this design.
 
 Important per-case outputs include:
 

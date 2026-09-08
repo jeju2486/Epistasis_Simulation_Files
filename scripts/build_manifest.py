@@ -10,9 +10,9 @@ from simflow import REPO_ROOT, deterministic_seed, load_config, repo_path, write
 
 
 MODE_LABEL = {
-    0: "balanced_independent_negative_control",
-    1: "global_high_frequency_independent",
-    2: "global_high_frequency_dependent",
+    0: "neutral_ld_background",
+    1: "global_balanced_independent",
+    2: "global_balanced_dependent",
 }
 
 
