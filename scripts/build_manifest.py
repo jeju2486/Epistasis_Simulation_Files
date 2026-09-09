@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 from simflow import REPO_ROOT, deterministic_seed, load_config, repo_path, write_tsv_atomic
@@ -12,7 +13,7 @@ from simflow import REPO_ROOT, deterministic_seed, load_config, repo_path, write
 MODE_LABEL = {
     0: "neutral_ld_background",
     1: "global_balanced_independent",
-    2: "global_balanced_dependent",
+    2: "global_balanced_fitness_epistasis",
 }
 
 
@@ -33,7 +34,8 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     genome = config["genome"]
     population = config["population"]
     loci = config["loci"]
-    frequency_dependence = config["frequency_dependence"]
+    marginal_control = config["marginal_control"]
+    mode2_fitness = config["mode2_fitness"]
     equilibrium = config["equilibrium"]
     postprocess = config["postprocess"]
 
@@ -71,10 +73,23 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
     if any(value + within_hgt_probability > 1.0 for value in cross_hgt_probabilities):
         raise ValueError("within- and cross-HGT probabilities must sum to at most one")
 
-    strength = float(frequency_dependence["strength"])
-    epsilon = float(frequency_dependence["epsilon"])
+    strength = float(marginal_control["strength"])
+    epsilon = float(marginal_control["epsilon"])
+    target_a = float(marginal_control["target_a"])
+    target_b = float(marginal_control["target_b"])
     if strength <= 0.0 or epsilon <= 0.0:
-        raise ValueError("frequency-dependence strength and epsilon must be positive")
+        raise ValueError("marginal-control strength and epsilon must be positive")
+    if not 0.0 < target_a < 1.0 or not 0.0 < target_b < 1.0:
+        raise ValueError("marginal targets must lie strictly between zero and one")
+    log_fitness = [
+        float(mode2_fitness[f"log_fitness_{state}"])
+        for state in ("00", "01", "10", "11")
+    ]
+    if not all(math.isfinite(value) for value in log_fitness):
+        raise ValueError("mode-2 log fitnesses must be finite")
+    epistasis_contrast = log_fitness[3] + log_fitness[0] - log_fitness[2] - log_fitness[1]
+    if math.isclose(epistasis_contrast, 0.0, abs_tol=1e-15):
+        raise ValueError("mode-2 fitness table must have a nonzero epistasis contrast")
 
     monitor_every = int(equilibrium["monitor_every"])
     minimum_ticks = int(equilibrium["minimum_ticks"])
@@ -148,8 +163,15 @@ def build(config: dict) -> tuple[list[dict[str, object]], list[dict[str, object]
                         "terminal_size": population["terminal_size"],
                         "sample_per_terminal": population["sample_per_terminal"],
                         "end_tick": end_tick,
-                        "fds_strength": strength,
-                        "fds_epsilon": epsilon,
+                        "marginal_strength": strength,
+                        "marginal_epsilon": epsilon,
+                        "marginal_target_a": target_a,
+                        "marginal_target_b": target_b,
+                        "log_fitness_00": log_fitness[0],
+                        "log_fitness_01": log_fitness[1],
+                        "log_fitness_10": log_fitness[2],
+                        "log_fitness_11": log_fitness[3],
+                        "epistasis_contrast": epistasis_contrast,
                         "equilibrium_monitor_every": monitor_every,
                         "equilibrium_minimum_ticks": minimum_ticks,
                         "equilibrium_stable_checks": stable_checks,

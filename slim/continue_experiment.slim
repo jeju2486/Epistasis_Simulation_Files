@@ -1,6 +1,6 @@
 // Continue a four-lineage checkpoint under a neutral background condition or
-// one of two global A-B target regimes, crossed with three HGT rates. Target:
-// SLiM 5.2.
+// marginal A/B control, with optional persistent four-state focal fitness,
+// crossed with three HGT rates. Target: SLiM 5.2.
 
 initialize() {
     initializeSLiMModelType("nonWF");
@@ -25,8 +25,14 @@ initialize() {
     if (!exists("SAMPLE_PER_TERMINAL")) defineConstant("SAMPLE_PER_TERMINAL", 250);
     if (!exists("END_TICK")) defineConstant("END_TICK", 30000);
     if (!exists("MODE")) defineConstant("MODE", 1);
-    if (!exists("FDS_STRENGTH")) defineConstant("FDS_STRENGTH", 0.25);
-    if (!exists("FDS_EPSILON")) defineConstant("FDS_EPSILON", 0.0002);
+    if (!exists("MARGINAL_STRENGTH")) defineConstant("MARGINAL_STRENGTH", 0.25);
+    if (!exists("MARGINAL_EPSILON")) defineConstant("MARGINAL_EPSILON", 0.0002);
+    if (!exists("MARGINAL_TARGET_A")) defineConstant("MARGINAL_TARGET_A", 0.5);
+    if (!exists("MARGINAL_TARGET_B")) defineConstant("MARGINAL_TARGET_B", 0.5);
+    if (!exists("LOG_FITNESS_00")) defineConstant("LOG_FITNESS_00", 0.01);
+    if (!exists("LOG_FITNESS_01")) defineConstant("LOG_FITNESS_01", 0.0);
+    if (!exists("LOG_FITNESS_10")) defineConstant("LOG_FITNESS_10", 0.0);
+    if (!exists("LOG_FITNESS_11")) defineConstant("LOG_FITNESS_11", 0.01);
     if (!exists("EQUILIBRIUM_MONITOR_EVERY")) defineConstant("EQUILIBRIUM_MONITOR_EVERY", 100);
     if (!exists("EQUILIBRIUM_MINIMUM_TICKS")) defineConstant("EQUILIBRIUM_MINIMUM_TICKS", 1000);
     if (!exists("EQUILIBRIUM_STABLE_CHECKS")) defineConstant("EQUILIBRIUM_STABLE_CHECKS", 5);
@@ -62,11 +68,16 @@ function (integer$) abState(o<Individual>$ ind) {
     return state;
 }
 
-function (float) targetFrequencies(o<Subpopulation>$ pop) {
-    // Every terminal population uses the same target, so population structure
-    // changes only through cross-HGT and never defines the planted A-B truth.
-    if (MODE == 2) return c(0.45, 0.05, 0.05, 0.45);
-    return c(0.25, 0.25, 0.25, 0.25);
+function (float) marginalTargets(void) {
+    // The same single-locus targets apply to every terminal population. They
+    // preserve polymorphism but do not impose any A-B association.
+    return c(MARGINAL_TARGET_A, MARGINAL_TARGET_B);
+}
+
+function (float) focalLogFitnesses(void) {
+    if (MODE != 2)
+        return c(0.0, 0.0, 0.0, 0.0);
+    return c(LOG_FITNESS_00, LOG_FITNESS_01, LOG_FITNESS_10, LOG_FITNESS_11);
 }
 
 function (integer) pairCounts(o<Individual> individuals) {
@@ -76,6 +87,14 @@ function (integer) pairCounts(o<Individual> individuals) {
         counts[state] = counts[state] + 1;
     }
     return counts;
+}
+
+function (float) marginalFrequencies(integer counts) {
+    total = sum(counts);
+    if (total <= 0)
+        stop("Cannot calculate focal marginals in an empty population.");
+    return c((counts[2] + counts[3]) / total,
+             (counts[1] + counts[3]) / total);
 }
 
 function (object<Mutation>) seedFocalLoci(void) {
@@ -126,16 +145,22 @@ function (void) writeSelectedLoci(object<Mutation> loci) {
 }
 
 function (void) writeEndpoint(void) {
-    header = "tick\tmode\tcross_hgt_probability\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tcount_00\tcount_01\tcount_10\tcount_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\n";
+    header = "tick\tmode\tcross_hgt_probability\tpopulation\tn\ttarget_A\ttarget_B\tlog_fitness_00\tlog_fitness_01\tlog_fitness_10\tlog_fitness_11\tepistasis_contrast\tcount_00\tcount_01\tcount_10\tcount_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\tfreq_A\tfreq_B\n";
     writeFile(ENDPOINT_FILE, header, append=F);
     for (pop in sim.subpopulations) {
         counts = pairCounts(pop.individuals);
         freqs = counts / pop.individualCount;
-        target = targetFrequencies(pop);
+        marginals = marginalFrequencies(counts);
+        target = marginalTargets();
+        logFitness = focalLogFitnesses();
+        epistasis = logFitness[3] + logFitness[0] - logFitness[2] - logFitness[1];
         line = community.tick + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" + pop.name + "\t" + pop.individualCount;
         for (value in target) line = line + "\t" + value;
+        for (value in logFitness) line = line + "\t" + value;
+        line = line + "\t" + epistasis;
         for (value in counts) line = line + "\t" + value;
         for (value in freqs) line = line + "\t" + value;
+        for (value in marginals) line = line + "\t" + value;
         writeFile(ENDPOINT_FILE, line + "\n", append=T);
     }
 }
@@ -146,13 +171,15 @@ function (float$) writeMonitor(void) {
     for (pop in sim.subpopulations) {
         counts = pairCounts(pop.individuals);
         freqs = counts / pop.individualCount;
-        target = targetFrequencies(pop);
-        deviation = max(abs(freqs - target));
+        marginals = marginalFrequencies(counts);
+        target = marginalTargets();
+        deviation = max(abs(marginals - target));
         maximumDeviation = max(maximumDeviation, deviation);
         line = community.tick + "\t" + MODE + "\t" + HGT_P_CROSS + "\t" +
                stableChecks + "\t" + pop.name + "\t" + pop.individualCount;
         for (value in target) line = line + "\t" + value;
         for (value in freqs) line = line + "\t" + value;
+        for (value in marginals) line = line + "\t" + value;
         line = line + "\t" + deviation + "\n";
         writeFile(MONITOR_FILE, line, append=T);
     }
@@ -164,7 +191,7 @@ function (void) writeEquilibriumStatus(string$ status, float$ maximumDeviation) 
     firstEquilibriumTick = "NA";
     if (!isNULL(sim.getValue("first_equilibrium_tick")))
         firstEquilibriumTick = asString(sim.getValue("first_equilibrium_tick"));
-    text = "status\tsampling_tick\telapsed_ticks\tfirst_equilibrium_tick\tmode\tcross_hgt_probability\tmax_abs_deviation\ttolerance\tstable_checks\trequired_stable_checks\n" +
+    text = "status\tsampling_tick\telapsed_ticks\tfirst_equilibrium_tick\tmode\tcross_hgt_probability\tmax_abs_marginal_deviation\ttolerance\tstable_checks\trequired_stable_checks\n" +
            status + "\t" + community.tick + "\t" + elapsed + "\t" + firstEquilibriumTick + "\t" +
            MODE + "\t" + HGT_P_CROSS + "\t" + maximumDeviation + "\t" + EQUILIBRIUM_TOLERANCE +
            "\t" + sim.getValue("stable_checks") + "\t" + EQUILIBRIUM_STABLE_CHECKS + "\n";
@@ -177,7 +204,7 @@ function (void) finishRun(float$ maximumDeviation) {
     if (MODE == 0)
         status = "neutral_no_focal_control";
     else if (!isNULL(sim.getValue("first_equilibrium_tick")))
-        status = "equilibrium_reached";
+        status = "marginal_targets_reached";
     writeEquilibriumStatus(status, maximumDeviation);
     sampled = NULL;
     for (pop in sim.subpopulations) {
@@ -225,8 +252,14 @@ reproduction() {
 
 s1 1 early() {
     if (!((MODE == 0) | (MODE == 1) | (MODE == 2))) stop("MODE must be 0, 1, or 2.");
-    if ((FDS_STRENGTH <= 0.0) | (FDS_EPSILON <= 0.0))
-        stop("Frequency-dependence parameters must be positive.");
+    if ((MARGINAL_STRENGTH <= 0.0) | (MARGINAL_EPSILON <= 0.0) |
+        (MARGINAL_TARGET_A <= 0.0) | (MARGINAL_TARGET_A >= 1.0) |
+        (MARGINAL_TARGET_B <= 0.0) | (MARGINAL_TARGET_B >= 1.0))
+        stop("Invalid marginal-frequency control parameters.");
+    logFitness = c(LOG_FITNESS_00, LOG_FITNESS_01, LOG_FITNESS_10, LOG_FITNESS_11);
+    epistasis = logFitness[3] + logFitness[0] - logFitness[2] - logFitness[1];
+    if ((MODE == 2) & (abs(epistasis) < 1e-15))
+        stop("Mode 2 requires a nonzero fitness epistasis contrast.");
     if ((HGT_P_WITHIN < 0.0) | (HGT_P_CROSS < 0.0) |
         ((HGT_P_WITHIN + HGT_P_CROSS) > 1.0))
         stop("Within- and cross-HGT probabilities must be non-negative and sum to at most one.");
@@ -246,7 +279,7 @@ s1 1 early() {
     sim.setValue("loaded", T);
     sim.setValue("start_tick", community.tick);
     sim.setValue("stable_checks", 0);
-    monitorHeader = "tick\tmode\tcross_hgt_probability\tstable_checks_before_update\tpopulation\tn\ttarget_00\ttarget_01\ttarget_10\ttarget_11\tfreq_00\tfreq_01\tfreq_10\tfreq_11\tmax_abs_deviation\n";
+    monitorHeader = "tick\tmode\tcross_hgt_probability\tstable_checks_before_update\tpopulation\tn\ttarget_A\ttarget_B\tfreq_00\tfreq_01\tfreq_10\tfreq_11\tfreq_A\tfreq_B\tmax_abs_marginal_deviation\n";
     writeFile(MONITOR_FILE, monitorHeader, append=F);
     community.rescheduleScriptBlock(s2, start=community.tick + 1, end=END_TICK);
     community.rescheduleScriptBlock(s3, start=community.tick + 1, end=END_TICK);
@@ -275,8 +308,20 @@ s2 2 early() {
             counts[state] = counts[state] + 1;
         }
         freqs = counts / size(juveniles);
-        target = targetFrequencies(pop);
-        stateLogWeights = FDS_STRENGTH * log((target + FDS_EPSILON) / (freqs + FDS_EPSILON));
+        marginals = marginalFrequencies(counts);
+        target = marginalTargets();
+        aAbsent = log((1.0 - target[0] + MARGINAL_EPSILON) /
+                      (1.0 - marginals[0] + MARGINAL_EPSILON));
+        aPresent = log((target[0] + MARGINAL_EPSILON) /
+                       (marginals[0] + MARGINAL_EPSILON));
+        bAbsent = log((1.0 - target[1] + MARGINAL_EPSILON) /
+                      (1.0 - marginals[1] + MARGINAL_EPSILON));
+        bPresent = log((target[1] + MARGINAL_EPSILON) /
+                       (marginals[1] + MARGINAL_EPSILON));
+        stateLogWeights = MARGINAL_STRENGTH * c(
+            aAbsent + bAbsent, aAbsent + bPresent,
+            aPresent + bAbsent, aPresent + bPresent);
+        stateLogWeights = stateLogWeights + focalLogFitnesses();
         stateLogWeights = stateLogWeights - sum(freqs * stateLogWeights);
         weights = float(size(juveniles));
         for (i in seqAlong(juveniles))

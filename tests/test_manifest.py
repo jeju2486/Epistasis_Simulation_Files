@@ -9,6 +9,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from build_manifest import build  # noqa: E402
+from run_manifest import case_command  # noqa: E402
 from simflow import deterministic_seed, to_msprime_seed  # noqa: E402
 
 
@@ -25,7 +26,14 @@ class ManifestTests(unittest.TestCase):
                            "sample_per_terminal": 5, "deep_split_tick": 10,
                            "terminal_split_tick": 20, "end_tick": 40},
             "loci": {"a_position": 10, "b_position": 50},
-            "frequency_dependence": {"strength": 0.25, "epsilon": 0.001},
+            "marginal_control": {
+                "strength": 0.25, "epsilon": 0.001,
+                "target_a": 0.5, "target_b": 0.5,
+            },
+            "mode2_fitness": {
+                "log_fitness_00": 0.01, "log_fitness_01": 0.0,
+                "log_fitness_10": 0.0, "log_fitness_11": 0.01,
+            },
             "equilibrium": {"monitor_every": 5, "minimum_ticks": 10,
                             "stable_checks": 2, "tolerance": 0.1},
             "postprocess": {"ancestral_ne": 100, "tree_position": 90},
@@ -41,11 +49,37 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(
             {row["regime"] for row in cases},
             {"neutral_ld_background", "global_balanced_independent",
-             "global_balanced_dependent"},
+             "global_balanced_fitness_epistasis"},
         )
         self.assertEqual(cases[0]["out_dir"], "runs/rep_0001/cross_0/mode_0")
         self.assertEqual(cases[0]["case_id"], "rep_0001__cross_0__mode_0")
         self.assertEqual(cases[4]["cross_hgt_label"], "0p002")
+        self.assertAlmostEqual(cases[0]["marginal_target_a"], 0.5)
+        self.assertAlmostEqual(cases[0]["epistasis_contrast"], 0.02)
+
+    def test_mode_two_requires_nonzero_fitness_epistasis(self) -> None:
+        self.config["mode2_fitness"] = {
+            "log_fitness_00": 0.0, "log_fitness_01": 0.0,
+            "log_fitness_10": 0.0, "log_fitness_11": 0.0,
+        }
+        with self.assertRaisesRegex(ValueError, "nonzero epistasis contrast"):
+            build(self.config)
+
+    def test_case_command_wires_marginal_control_and_four_state_fitness(self) -> None:
+        _, cases = build(self.config)
+        command = case_command(cases[0])
+        for flag in (
+            "--marginal-strength", "--marginal-target-a", "--marginal-target-b",
+            "--log-fitness-00", "--log-fitness-01", "--log-fitness-10",
+            "--log-fitness-11",
+        ):
+            self.assertIn(flag, command)
+        self.assertNotIn("--fds-strength", command)
+
+    def test_marginal_targets_must_be_polymorphic(self) -> None:
+        self.config["marginal_control"]["target_a"] = 1.0
+        with self.assertRaisesRegex(ValueError, "strictly between"):
+            build(self.config)
 
     def test_invalid_timeline_is_rejected(self) -> None:
         self.config["population"]["end_tick"] = 20

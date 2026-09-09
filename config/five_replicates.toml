@@ -1,7 +1,7 @@
 [paths]
 reference = "inputs/reference_100kb.fa"
 checkpoint_root = "checkpoints_100kb_neutral10k_mu2e8"
-run_root = "runs_100kb_global_balanced_strong_ab_hgt_mu2e8"
+run_root = "runs_100kb_marginal_control_fitness_epistasis_hgt_mu2e8"
 manifest_root = "manifests"
 
 [design]
@@ -30,9 +30,17 @@ end_tick = 30000
 a_position = 10000
 b_position = 50000
 
-[frequency_dependence]
+[marginal_control]
 strength = 0.25
 epsilon = 0.0002
+target_a = 0.5
+target_b = 0.5
+
+[mode2_fitness]
+log_fitness_00 = 0.01
+log_fitness_01 = 0.0
+log_fitness_10 = 0.0
+log_fitness_11 = 0.01
 
 [equilibrium]
 monitor_every = 100
