@@ -167,7 +167,12 @@ def evaluate_case(
 
     positions = eligible_positions(spydrpick / "eligible_loci.tsv")
     focal_columns = focal_pair_columns(case_dir / "selected_loci.tsv", positions)
-    focal_positions = [positions[column] for column in focal_columns]
+    selected = {row["label"]: int(row["position"]) for row in read_tsv(
+        case_dir / "selected_loci.tsv"
+    )}
+    if set(selected) != {"A", "B"}:
+        raise ValueError("selected_loci.tsv must contain exactly A and B")
+    focal_positions = [selected["A"], selected["B"]]
     populations, frequencies, weights, n_loci = population_frequencies(
         spydrpick / "all_snps.binary_ac.fa", case_dir / "sample_names.tsv"
     )
@@ -205,7 +210,10 @@ def evaluate_case(
                 *counts, population_u, population_v, weights
             )
             distance = abs(positions[v] - positions[u])
-            is_focal = tuple(sorted((u, v))) == focal_columns
+            is_focal = (
+                focal_columns is not None
+                and tuple(sorted((u, v))) == focal_columns
+            )
             focal_proximal = any(
                 abs(position - focal) <= FOCAL_WINDOW_BP
                 for position in (positions[u], positions[v])

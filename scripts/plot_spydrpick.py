@@ -26,13 +26,15 @@ def eligible_positions(path: Path) -> list[int]:
     return [int(row["slim_position"]) for row in rows]
 
 
-def focal_pair_columns(selected_loci: Path, positions: list[int]) -> tuple[int, int]:
+def focal_pair_columns(
+    selected_loci: Path, positions: list[int]
+) -> tuple[int, int] | None:
     focal = {row["label"]: int(row["position"]) for row in read_tsv(selected_loci)}
     if set(focal) != {"A", "B"}:
         raise ValueError("selected_loci.tsv must contain exactly A and B")
     position_to_column = {position: column for column, position in enumerate(positions)}
     if focal["A"] not in position_to_column or focal["B"] not in position_to_column:
-        raise ValueError("A or B failed the shared MAF filter")
+        return None
     return tuple(sorted((position_to_column[focal["A"]], position_to_column[focal["B"]])))
 
 
@@ -49,8 +51,11 @@ def quantile(values: list[float], probability: float) -> float:
 
 
 def read_points(
-    edges: Path, focal_columns: tuple[int, int], max_background_points: int,
-) -> tuple[list[float], list[float], tuple[float, float, int], list[dict[str, float | int]]]:
+    edges: Path, focal_columns: tuple[int, int] | None, max_background_points: int,
+) -> tuple[
+    list[float], list[float], tuple[float, float, int] | None,
+    list[dict[str, float | int]],
+]:
     rows: list[tuple[float, float]] = []
     focal: tuple[float, float, int] | None = None
     bins: dict[int, list[float]] = {}
@@ -60,12 +65,12 @@ def read_points(
                 continue
             u, v, distance, _aracne, mi = parse_edge(line)
             distance_kb = distance / 1000.0
-            if tuple(sorted((u, v))) == focal_columns:
+            if focal_columns is not None and tuple(sorted((u, v))) == focal_columns:
                 focal = (distance_kb, mi, rank)
             else:
                 rows.append((distance_kb, mi))
             bins.setdefault(int(distance_kb), []).append(mi)
-    if focal is None:
+    if focal_columns is not None and focal is None:
         raise ValueError("A-B pair is absent from the complete SpydrPick output")
     stride = max(1, math.ceil(len(rows) / max_background_points))
     sampled = rows[::stride]
@@ -81,7 +86,8 @@ def read_points(
 
 
 def draw_plot(result: Path, case_id: str, distances: list[float], values: list[float],
-              focal: tuple[float, float, int], maximum_kb: float | None, filename: str) -> None:
+              focal: tuple[float, float, int] | None, maximum_kb: float | None,
+              filename: str) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -90,7 +96,7 @@ def draw_plot(result: Path, case_id: str, distances: list[float], values: list[f
     fig, ax = plt.subplots(figsize=(7.6, 5.4), constrained_layout=True)
     ax.scatter(distances, values, s=5, color="#777777", alpha=0.22,
                linewidths=0, rasterized=True, label="Other eligible pairs")
-    if maximum_kb is None or focal[0] <= maximum_kb:
+    if focal is not None and (maximum_kb is None or focal[0] <= maximum_kb):
         ax.scatter([focal[0]], [focal[1]], s=75, color=FOCAL_COLOR,
                    edgecolors="black", linewidths=0.6, label="AB", zorder=4)
         ax.annotate("AB", (focal[0], focal[1]), xytext=(4, 4),
@@ -128,8 +134,12 @@ def plot_case(
         writer.writeheader()
         writer.writerows(summaries)
     return {
-        "u_column": focal_columns[0], "v_column": focal_columns[1],
-        "physical_distance_kb": focal[0], "mi": focal[1], "mi_order_rank": focal[2],
+        "focal_status": "available" if focal is not None else "not_maf_eligible",
+        "u_column": focal_columns[0] if focal_columns is not None else "NA",
+        "v_column": focal_columns[1] if focal_columns is not None else "NA",
+        "physical_distance_kb": focal[0] if focal is not None else "NA",
+        "mi": focal[1] if focal is not None else "NA",
+        "mi_order_rank": focal[2] if focal is not None else "NA",
         "sample_reweighting": sample_reweighting,
         "eligible_loci": len(positions), "total_pairs": len(positions) * (len(positions) - 1) // 2,
     }
@@ -182,7 +192,10 @@ def main() -> None:
             subset = [
                 row for row in aggregate
                 if math.isclose(float(row["cross_hgt_probability"]), hgt)
+                and row["mi"] != "NA"
             ]
+            if not subset:
+                continue
             ax.scatter(
                 [int(row["mode"]) + offsets[hgt] for row in subset],
                 [float(row["mi"]) for row in subset],

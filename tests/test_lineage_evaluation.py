@@ -12,6 +12,7 @@ sys.path.insert(0, str(SCRIPTS))
 from evaluate_lineage_confounding import (  # noqa: E402
     classify_pair,
     decompose_covariance,
+    evaluate_case,
     kovar_top_threshold,
     triangular_index,
 )
@@ -70,6 +71,49 @@ class LineageEvaluationTests(unittest.TestCase):
             threshold, finite = kovar_top_threshold(path)
             self.assertEqual(finite, 2)
             self.assertEqual(threshold, 0.01)
+
+    def test_evaluation_continues_when_focal_loci_are_not_maf_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory)
+            spydrpick = case_dir / "spydrpick_all_pairs"
+            kovar = case_dir / "kovar_v083_iqtree_spa_off"
+            spydrpick.mkdir()
+            kovar.mkdir()
+            for marker in (case_dir / "_SUCCESS", spydrpick / "_SUCCESS", kovar / "_SUCCESS"):
+                marker.touch()
+            (case_dir / "selected_loci.tsv").write_text(
+                "label\tposition\nA\t10000\nB\t50000\n", encoding="utf-8"
+            )
+            (case_dir / "sample_names.tsv").write_text(
+                "analysis_label\tpopulation\n"
+                "s1\tp1\ns2\tp1\ns3\tp2\ns4\tp2\n",
+                encoding="utf-8",
+            )
+            (spydrpick / "eligible_loci.tsv").write_text(
+                "filtered_column\toriginal_column\tslim_position\tprevalence\tmaf\n"
+                "0\t0\t20000\t0.5\t0.5\n1\t1\t30000\t0.5\t0.5\n",
+                encoding="utf-8",
+            )
+            (spydrpick / "all_snps.binary_ac.fa").write_text(
+                ">s1\nAA\n>s2\nCC\n>s3\nAC\n>s4\nCA\n", encoding="utf-8"
+            )
+            import gzip
+
+            with gzip.open(spydrpick / "spydrpick.edges.gz", "wt", encoding="utf-8") as handle:
+                handle.write("0 1 10000 0 0.0\n")
+            (kovar / "ko_variation.tsv").write_text(
+                "u\tv\tn11\tn10\tn01\tn00\tp_primary\tbonferroni_significant\n"
+                "0\t1\t1\t1\t1\t1\t0.5\t0\n",
+                encoding="utf-8",
+            )
+
+            rows = evaluate_case(
+                {"case_id": "missing_focal", "out_dir": str(case_dir)},
+                "metrics.tsv.gz", "off",
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertNotEqual(rows[0]["category"], "focal_AB")
+            self.assertTrue((case_dir / "metrics.tsv.gz").exists())
 
 
 if __name__ == "__main__":

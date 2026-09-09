@@ -26,7 +26,9 @@ def distance_bin(distance_kb: float) -> str:
     return ">20 kb"
 
 
-def read_results(table: Path, positions: list[int], focal_columns: tuple[int, int]) -> tuple[list[dict], dict]:
+def read_results(
+    table: Path, positions: list[int], focal_columns: tuple[int, int] | None
+) -> tuple[list[dict], dict | None]:
     points: list[dict] = []
     focal: dict | None = None
     with table.open(encoding="utf-8", newline="") as handle:
@@ -48,14 +50,12 @@ def read_results(table: Path, positions: list[int], focal_columns: tuple[int, in
                 "n_tests": int(float(row.get("n_tests", "0") or 0)),
             }
             points.append(point)
-            if tuple(sorted((u, v))) == focal_columns:
+            if focal_columns is not None and tuple(sorted((u, v))) == focal_columns:
                 focal = point
-    if focal is None:
-        raise ValueError("A-B has no finite KOVAR primary p-value")
     return points, focal
 
 
-def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict,
+def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict | None,
                   max_background_points: int, spa_mode: str) -> None:
     import matplotlib
 
@@ -68,10 +68,11 @@ def plot_distance(result: Path, case_id: str, points: list[dict], focal: dict,
     ax.scatter([p["distance_kb"] for p in background], [p["score"] for p in background],
                s=6, color="#777777", alpha=0.2, linewidths=0, rasterized=True,
                label="Other tested pairs")
-    ax.scatter([focal["distance_kb"]], [focal["score"]], s=75, color=FOCAL_COLOR,
-               edgecolors="black", linewidths=0.6, zorder=4, label="AB")
-    ax.annotate("AB", (focal["distance_kb"], focal["score"]), xytext=(4, 4),
-                textcoords="offset points", fontsize=9)
+    if focal is not None:
+        ax.scatter([focal["distance_kb"]], [focal["score"]], s=75, color=FOCAL_COLOR,
+                   edgecolors="black", linewidths=0.6, zorder=4, label="AB")
+        ax.annotate("AB", (focal["distance_kb"], focal["score"]), xytext=(4, 4),
+                    textcoords="offset points", fontsize=9)
     n_tests = max((p["n_tests"] for p in points), default=0)
     if n_tests:
         ax.axhline(-math.log10(0.05 / n_tests), color="#333333", linestyle="--",
@@ -128,12 +129,32 @@ def plot_case(
         subset = [point for point in points if point["bin"] == label]
         counts.append({"distance_bin": label, "tested": len(subset),
                        "bonferroni_significant": sum(point["bonferroni"] for point in subset)})
-    return {
-        "u_column": focal["u"], "v_column": focal["v"],
-        "physical_distance_kb": focal["distance_kb"], "p_primary": focal["p"],
-        "neglog10_p": focal["score"], "bonferroni_significant": focal["bonferroni"],
-        "n_tests": focal["n_tests"],
-    }, counts
+    if focal is None:
+        focal_status = (
+            "not_maf_eligible" if focal_columns is None else "no_finite_kovar_p"
+        )
+        focal_summary = {
+            "focal_status": focal_status,
+            "u_column": focal_columns[0] if focal_columns is not None else "NA",
+            "v_column": focal_columns[1] if focal_columns is not None else "NA",
+            "physical_distance_kb": (
+                abs(positions[focal_columns[1]] - positions[focal_columns[0]]) / 1000.0
+                if focal_columns is not None else "NA"
+            ),
+            "p_primary": "NA", "neglog10_p": "NA",
+            "bonferroni_significant": "NA",
+            "n_tests": max((point["n_tests"] for point in points), default=0),
+        }
+    else:
+        focal_summary = {
+            "focal_status": "available",
+            "u_column": focal["u"], "v_column": focal["v"],
+            "physical_distance_kb": focal["distance_kb"], "p_primary": focal["p"],
+            "neglog10_p": focal["score"],
+            "bonferroni_significant": focal["bonferroni"],
+            "n_tests": focal["n_tests"],
+        }
+    return focal_summary, counts
 
 
 def main() -> None:
@@ -183,7 +204,10 @@ def main() -> None:
             subset = [
                 row for row in focal_rows
                 if math.isclose(float(row["cross_hgt_probability"]), hgt)
+                and row["neglog10_p"] != "NA"
             ]
+            if not subset:
+                continue
             ax.scatter(
                 [int(row["mode"]) + offsets[hgt] for row in subset],
                 [float(row["neglog10_p"]) for row in subset],

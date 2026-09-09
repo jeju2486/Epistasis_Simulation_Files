@@ -100,6 +100,9 @@ marked `not_reached_by_sampling`; mode 0 is marked `neutral_no_focal_control`.
   their count in `run_metadata.json`.
 - KOVAR receives every eligible unordered pair as a two-column `u/v` file. Truth
   labels are never candidate inputs.
+- If A or B drifts below the shared MAF threshold, background SpydrPick, KOVAR,
+  QQ, distance, and lineage-confounding analyses still run. Focal summaries mark
+  the A-B result `not_maf_eligible` and report its statistics as `NA`.
 - IQ-TREE 2 infers one tree per case from the observed nucleotide SNP alignment.
   A and B are excluded to prevent the planted pair from directly determining its
   own covariance correction; invariant columns are removed and `GTR+ASC` is used.
