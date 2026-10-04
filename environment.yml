@@ -11,5 +11,6 @@ dependencies:
   - spydrpick=1.2.0
   - iqtree>=2.2
   - biopython>=1.83
+  - numpy
   - matplotlib>=3.8
   - shellcheck

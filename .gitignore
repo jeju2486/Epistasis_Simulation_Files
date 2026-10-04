@@ -20,6 +20,7 @@ runs_100kb_seeded_mu2e8/
 runs_smoke/
 checkpoints_smoke/
 summaries/
+results/figure1*/
 
 # SLiM / phylogeny outputs
 *.trees

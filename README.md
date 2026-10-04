@@ -275,3 +275,126 @@ Across-case focal tables and mode-by-HGT plots are written below
 `results/kovar_v083_iqtree_spa_{off,auto}/`.
 The SPA-specific lineage-confounding summaries are written below
 `results/lineage_confounding_kovar_v083_iqtree_spa_{off,auto}/`.
+
+## Manuscript Figure 1 panels
+
+`scripts/plot_figure1.py` exports each panel separately as PDF, editable-text SVG,
+and 300-dpi PNG, with compressed pair-level data, summary tables, and an input
+hash/settings report. It reads completed simulation, SpydrPick and KOVAR outputs;
+it does not rerun simulations or fit association models. No extra dependencies
+are needed beyond `environment.yml`.
+
+After running the analysis pipeline with a freshly generated manifest:
+
+```bash
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode auto
+```
+
+The outputs are in `results/figure1_spa_off_default/` and
+`results/figure1_spa_auto_default/`. Panel A is explicitly recorded as pending
+unless the independent null/calibration inputs below are supplied. These commands
+still generate B–E. To select panels, cases, formats or the unweighted MI
+sensitivity analysis:
+
+```bash
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
+  --panels B E --case-id rep_0001__cross_0__mode_2 \
+  --formats pdf svg --output-dir results/figure1_selected
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
+  --sample-reweighting none --panels B C D E
+```
+
+Use a separate output directory for a different manifest/subset or calibration
+choice. `figure1_report.json` lists the files produced by the current invocation;
+files from an earlier invocation are not silently claimed as current outputs.
+
+| Panel | Files and measured quantity |
+| --- | --- |
+| A | `A_qq_mode_*`: calibrated marginal P and KOVAR primary P on explicitly declared null pairs, grouped by mode and cross-HGT. |
+| B | `B_<case>_MI`, `B_<case>_KOVAR`: genomic separation versus native MI or −log10(primary P), respectively; focal A–B is highlighted. |
+| C | `C_focal_rank`, `C_focal_recovery`: replicate-level focal ranks and recovery across the selected conditions. |
+| D | `D_lineage_enrichment`: enrichment of nonfocal lineage-associated pairs in each method's top-ranked distal set, relative to their prevalence in the same eligible set. |
+| E | `E_<case>_identical_pair_ranks`: marginal MI rank versus KOVAR P rank for the identical finite-test pair set; A–B and distal lineage-associated pairs are highlighted. |
+
+The manuscript's operational local exclusion is **≤10 kb** (`--distal-bp 10000`).
+B shows all distances and marks that boundary. D selects **>10 kb** pairs before
+ranking; E compares the complete candidate set with finite KOVAR tests, highlighting
+its distal lineage-associated subset. Existing post-analysis lineage labels retain
+their covariance-component definition: absolute covariance ≥0.01, between-population
+component fraction ≥0.8, and exclusion within 5 kb of either focal locus. The
+additional >10 kb filter is separate from that legacy 5 kb diagnostic definition.
+These are evaluation labels, not annotations supplied to either association method.
+
+The join validates every unordered pair in the shared eligible universe, including
+restored zero-MI pairs. Missing or duplicate pair rows are errors, not an implicit
+intersection. Unavailable KOVAR P values remain in `pairs_<case>.tsv.gz` with no
+assigned rank. E reranks **both** methods on exactly the same finite-test subset
+and reports its size and unavailable-test count. One-based ranks use average ties;
+rank 1 denotes largest MI or smallest P.
+
+C's comparative rank plot uses that shared finite-test subset; full marginal ranks
+are also exported in `C_focal_cases.tsv`. Recovery uses the full candidate-count
+top budget (`--top-fraction 0.01`), includes cutoff ties, and keeps all selected
+cases in the denominator. A filtered focal pair is `not_maf_eligible` and counts
+as unrecovered; a failed KOVAR focal test is likewise unrecovered for KOVAR.
+Marginal recovery can still be reported when the KOVAR focal test fails. The
+export also records KOVAR Bonferroni recovery at `--alpha 0.05`, using the complete
+candidate count; MI receives no fabricated significance designation.
+
+D uses the same finite, classified, distal pair universe for both methods. It
+sets equal nominal discovery budgets, including boundary ties, and reports the
+actual selected counts. Enrichment is
+`(lineage pairs in top set / top-set size) / (lineage pairs / eligible-set size)`.
+No lineage pairs or no eligible pairs yields `NaN`, not a zero effect. Joint-count
+failures remain unclassified and are excluded from this comparison, with counts
+reported separately. Replicate points and observed recovery fractions are
+descriptive; no independent-pair confidence intervals or superiority claims are
+inferred. Display thinning (`--max-points`) affects only scatter rendering, never
+ranks or summaries. Real results are required to interpret any direction.
+Zero P values are displayed at the recorded `1e-300` plotting floor; exported
+P values and ranks retain their original values.
+
+### Panel A null and marginal calibration inputs
+
+Raw MI is not a P value. Neither all nonfocal pairs nor all pairs in mode 0/1 can
+be assumed independent nulls: local LD and lineage covariance remain. Panel A
+therefore requires a prespecified null-pair list and marginal P values calibrated
+under a justified null procedure. The plotter does not select nulls by observed
+significance, permute data, or manufacture a calibration analysis.
+
+Supply tab-separated files (zero-based **filtered alignment columns**, not genomic
+positions or raw SpydrPick one-based columns):
+
+`null_pairs.tsv` header (fields separated by actual tab characters):
+
+```text
+case_id	u	v
+```
+
+`marginal_pvalues.tsv` header:
+
+```text
+case_id	u	v	p_marginal
+```
+
+Every requested null pair must have a valid calibrated marginal P value and exist
+in its case's complete pair universe. Only matched finite KOVAR tests enter both
+QQ curves; unavailable tests remain in the exported pair table. Extra calibration
+rows for other cases in the same manifest are allowed. Record the null definition,
+null-generation method, candidate-selection treatment, calibration dataset and
+any distance/frequency strata in the provenance note:
+
+```bash
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
+  --panels A --null-pairs path/to/null_pairs.tsv \
+  --marginal-pvalues path/to/marginal_pvalues.tsv \
+  --calibration-note 'Describe the independently defined null and its calibration' \
+  --output-dir results/figure1_calibration
+```
+
+Requesting only A without these inputs fails clearly; a default A–E invocation
+without them produces B–E and records A as pending. QQ curves pool the declared
+null pairs within each mode/HGT condition across selected replicates and are
+descriptive, not an assertion that correlated plotted pairs are independent.
+The report preserves input hashes and the calibration note for the final legend.
