@@ -14,7 +14,7 @@ import numpy as np
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
-from plot_figure1 import average_ranks, null_values, read_case, summarize
+from plot_figure1 import average_ranks, comparison_ranks, null_values, read_case, summarize
 
 
 def fixture(root: Path, *, filtered_focal=False) -> tuple[dict, Path]:
@@ -68,6 +68,11 @@ class Figure1Tests(unittest.TestCase):
             self.assertEqual(data["mi"][5], 0)
             self.assertEqual(data["p_rank"][2], data["p_rank"][3])
             self.assertEqual(data["shared_mi_rank"][1], 2)
+            eligible, mi_rank, p_rank = comparison_ranks(data, 10000)
+            np.testing.assert_array_equal(eligible, [False, True, True, True, False, True])
+            self.assertEqual(mi_rank[1], 1)  # Exact 10 kb pair is excluded before reranking.
+            self.assertEqual(p_rank[1], 2)
+            self.assertTrue(np.isnan(mi_rank[0]))
 
     def test_mismatched_universe_fails_instead_of_silent_intersection(self):
         with tempfile.TemporaryDirectory() as tmp:

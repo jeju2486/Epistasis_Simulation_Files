@@ -178,6 +178,14 @@ def sample_indices(indices: np.ndarray, maximum: int) -> np.ndarray:
     return indices[np.linspace(0, len(indices) - 1, maximum, dtype=int)]
 
 
+def comparison_ranks(data: dict, distal_bp: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Rerank both methods only after the shared distal/finite-test filter."""
+    eligible = np.isfinite(data["p"]) & (data["distance"] > distal_bp)
+    mi_rank = average_ranks(np.where(eligible, data["mi"], np.nan), descending=True)
+    kovar_rank = average_ranks(np.where(eligible, data["p"], np.nan))
+    return eligible, mi_rank, kovar_rank
+
+
 def panel_b(data: dict, output: Path, args) -> list[str]:
     import matplotlib.pyplot as plt
     files = []
@@ -196,7 +204,7 @@ def panel_b(data: dict, output: Path, args) -> list[str]:
         ax.axvline(args.distal_bp / 1000, color="black", linestyle="--", linewidth=.8,
                    label=f"≤{args.distal_bp / 1000:g} kb excluded from distal network")
         ax.set(xlabel="Genomic separation (kb)", ylabel=ylabel,
-               title=f"B  {data['case']['case_id']} · {method}", xlim=(0, None), ylim=(0, None))
+               xlim=(0, None), ylim=(0, None))
         ax.legend(frameon=False, fontsize=8)
         files += save(fig, output, f"B_{data['case']['case_id']}_{method}", args.formats)
     return files
@@ -204,28 +212,29 @@ def panel_b(data: dict, output: Path, args) -> list[str]:
 
 def panel_e(data: dict, output: Path, args, panel: str = "E") -> list[str]:
     import matplotlib.pyplot as plt
-    finite = np.isfinite(data["p"])
+    finite, mi_rank, kovar_rank = comparison_ranks(data, args.distal_bp)
     fig, ax = plt.subplots(figsize=(5.5, 5.1), layout="constrained")
     highlighted = (data["category"] == CATEGORIES["lineage_driven"]) & (data["distance"] > args.distal_bp)
     for mask, color, label, marker, size in (
         (finite & ~highlighted, "#888888", "Other pairs", ".", 8),
         (finite & highlighted, COLORS["MI"], "Distal lineage-associated", "o", 9)):
         indices = sample_indices(np.flatnonzero(mask), args.max_points)
-        ax.scatter(data["shared_mi_rank"][indices], data["p_rank"][indices],
+        ax.scatter(mi_rank[indices], kovar_rank[indices],
                    s=size, color=color, alpha=.35, marker=marker, linewidths=0,
                    rasterized=True, label=label)
     focal = data["focal"]
     if focal is not None and finite[focal]:
-        ax.scatter(data["shared_mi_rank"][focal], data["p_rank"][focal],
+        ax.scatter(mi_rank[focal], kovar_rank[focal],
                    marker="*", s=130, color="#CC79A7", edgecolor="black", linewidth=.5,
                    label="A–B", zorder=5)
-    maximum = max(2, data["n_finite"])
+    n_shared = int(finite.sum())
+    n_unavailable = int(((data["distance"] > args.distal_bp) & ~np.isfinite(data["p"])).sum())
+    maximum = max(2, n_shared)
     ax.plot([1, maximum], [1, maximum], "--", color="black", linewidth=.8)
     ax.set(xscale="log", yscale="log", xlim=(.8, maximum * 1.1), ylim=(.8, maximum * 1.1),
-           xlabel="Marginal MI rank (1 = highest)", ylabel="KOVAR P rank (1 = lowest P)",
-           title=f"{panel}  {data['case']['case_id']}")
-    ax.text(.02, .02, f"Same {data['n_finite']:,} finite-test pairs ranked by both methods\n"
-            f"{data['n_pairs'] - data['n_finite']:,} unavailable KOVAR tests reported separately",
+           xlabel="Marginal MI rank (1 = highest)", ylabel="KOVAR P rank (1 = lowest P)")
+    ax.text(.02, .02, f"Same {n_shared:,} finite-test distal pairs (>{args.distal_bp / 1000:g} kb)\n"
+            f"{n_unavailable:,} unavailable distal KOVAR tests reported separately",
             transform=ax.transAxes, fontsize=8, va="bottom")
     ax.legend(frameon=False, fontsize=8)
     return save(fig, output, f"{panel}_{data['case']['case_id']}_identical_pair_ranks", args.formats)
@@ -247,6 +256,7 @@ def top_mask(values: np.ndarray, fraction: float, *, descending: bool,
 def summarize(data: dict, args) -> tuple[dict, dict]:
     case = data["case"]
     finite = np.isfinite(data["p"])
+    rank_eligible, distal_mi_rank, distal_kovar_rank = comparison_ranks(data, args.distal_bp)
     # Focal recovery uses the full candidate budget; failed tests cannot recover.
     mi_top = top_mask(data["mi"], args.top_fraction, descending=True)
     p_top = top_mask(data["p"], args.top_fraction, descending=False,
@@ -257,12 +267,13 @@ def summarize(data: dict, args) -> tuple[dict, dict]:
     common = {"case_id": case["case_id"], "replicate": case["replicate"],
               "mode": case["mode"], "cross_hgt_probability": case["cross_hgt_probability"],
               "n_candidate_pairs": data["n_pairs"], "n_finite_kovar": data["n_finite"],
+              "n_shared_distal": int(rank_eligible.sum()),
               "focal_status": status}
     focal_row = {**common, "mi": data["mi"][focal] if focal is not None else "NA",
                  "p_primary": data["p"][focal] if status == "available" else "NA",
                  "full_mi_rank": data["mi_rank"][focal] if focal is not None else "NA",
-                 "shared_mi_rank": data["shared_mi_rank"][focal] if status == "available" else "NA",
-                 "kovar_rank": data["p_rank"][focal] if status == "available" else "NA",
+                 "shared_mi_rank": distal_mi_rank[focal] if focal is not None and rank_eligible[focal] else "NA",
+                 "kovar_rank": distal_kovar_rank[focal] if focal is not None and rank_eligible[focal] else "NA",
                  "mi_top_recovered": int(mi_top[focal]) if focal is not None else 0,
                  "kovar_top_recovered": int(p_top[focal]) if focal is not None else 0,
                  "kovar_bonferroni_recovered": int(data["p"][focal] <= args.alpha / data["n_pairs"])
@@ -298,8 +309,8 @@ def panel_c(rows: list[dict], output: Path, args) -> list[str]:
     for j, (method, field) in enumerate((("MI", "shared_mi_rank"), ("KOVAR", "kovar_rank"))):
         for x, group in enumerate(groups):
             selected = [row for row in rows if condition(row) == group]
-            values = [float(row[field]) / int(row["n_finite_kovar"]) * 100
-                      for row in selected if row[field] != "NA" and int(row["n_finite_kovar"]) > 0]
+            values = [float(row[field]) / int(row["n_shared_distal"]) * 100
+                      for row in selected if row[field] != "NA" and int(row["n_shared_distal"]) > 0]
             jitter = np.linspace(-.045, .045, len(values)) if len(values) > 1 else np.zeros(len(values))
             ax.scatter(x + (j - .5) * .22 + jitter, values, s=32,
                        color=COLORS[method], alpha=.8, label=method if x == 0 else None)
@@ -308,8 +319,8 @@ def panel_c(rows: list[dict], output: Path, args) -> list[str]:
                              "method": method, "n_cases": len(selected),
                              "n_focal_available": sum(row["focal_status"] == "available" for row in selected),
                              "n_top_recovered": recovered, "recovery_fraction": recovered / len(selected)})
-    ax.set(xticks=range(len(groups)), xticklabels=labels, ylabel="A–B rank / shared finite pairs (%)",
-           title="C  Focal A–B rank across simulation conditions", ylim=(0, 105),
+    ax.set(xticks=range(len(groups)), xticklabels=labels, ylabel="A–B rank / shared finite distal pairs (%)",
+           ylim=(0, 105),
            xlim=(-.5, len(groups) - .5))
     ax.grid(axis="y", alpha=.2)
     ax.legend(frameon=False)
@@ -321,7 +332,7 @@ def panel_c(rows: list[dict], output: Path, args) -> list[str]:
                 marker="o", color=COLORS[method], linewidth=1, label=method)
     ax.set(xticks=range(len(groups)), xticklabels=labels, ylim=(-.03, 1.05),
            ylabel=f"Fraction of cases with A–B in top {100 * args.top_fraction:g}%",
-           title="C  Focal A–B recovery", xlim=(-.5, len(groups) - .5))
+           xlim=(-.5, len(groups) - .5))
     ax.text(.02, .5, "Denominator: all selected cases", transform=ax.transAxes, fontsize=8)
     ax.legend(frameon=False, loc="upper left")
     ax.grid(axis="y", alpha=.2)
@@ -346,7 +357,6 @@ def panel_d(rows: list[dict], output: Path, args) -> list[str]:
     ax.set(xticks=range(len(groups)),
            xticklabels=[f"M{m}\nHGT={h:g}" for m, h in groups],
            ylabel="Lineage-associated enrichment in top-ranked distal pairs",
-           title=f"D  Nonfocal lineage-associated pairs (>{args.distal_bp / 1000:g} kb)",
            ylim=(0, None), xlim=(-.5, len(groups) - .5))
     if not any(math.isfinite(float(row[f"{method.lower()}_lineage_enrichment"]))
                for row in rows for method in COLORS):
@@ -414,8 +424,7 @@ def panel_a(groups: dict, output: Path, args) -> list[str]:
             rows.extend({"mode": mode, "cross_hgt_probability": hgt, "method": method,
                          "expected_p": e, "observed_p": p} for e, p in zip(expected, ordered))
         ax.plot([0, maximum], [0, maximum], "--", color="black", linewidth=.8)
-        ax.set(xlabel="Expected −log10(P)", ylabel="Observed −log10(P)",
-               title=f"A  Predeclared null pairs · mode {mode} · cross-HGT {hgt:g}")
+        ax.set(xlabel="Expected −log10(P)", ylabel="Observed −log10(P)")
         ax.legend(frameon=False, fontsize=8)
         slug = f"mode_{mode}_hgt_{hgt:g}".replace(".", "p")
         files += save(fig, output, f"A_qq_{slug}", args.formats)
@@ -425,10 +434,12 @@ def panel_a(groups: dict, output: Path, args) -> list[str]:
     return files + ["A_qq.tsv"]
 
 
-def export_pairs(data: dict, output: Path) -> str:
+def export_pairs(data: dict, output: Path, distal_bp: int = 10_000) -> str:
     path = output / f"pairs_{data['case']['case_id']}.tsv.gz"
     fields = ["u", "v", "u_position", "v_position", "distance_bp", "category", "mi",
-              "p_primary", "mi_rank_full", "mi_rank_shared_finite", "kovar_rank", "kovar_status"]
+              "p_primary", "mi_rank_full", "mi_rank_shared_finite", "kovar_rank", "kovar_status",
+              "rank_comparison_eligible", "mi_rank_shared_distal", "kovar_rank_shared_distal"]
+    eligible, mi_rank, kovar_rank = comparison_ranks(data, distal_bp)
     labels = {value: key for key, value in CATEGORIES.items()}
     with gzip.open(path, "wt", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -438,7 +449,9 @@ def export_pairs(data: dict, output: Path) -> str:
                              data["distance"][i], labels[data["category"][i]], data["mi"][i],
                              *[data[key][i] if math.isfinite(data[key][i]) else "NA"
                                for key in ("p", "mi_rank", "shared_mi_rank", "p_rank")],
-                             "finite" if math.isfinite(data["p"][i]) else "unavailable"])
+                             "finite" if math.isfinite(data["p"][i]) else "unavailable",
+                             int(eligible[i]), mi_rank[i] if eligible[i] else "NA",
+                             kovar_rank[i] if eligible[i] else "NA"])
     return path.name
 
 
@@ -488,13 +501,13 @@ def panel_recovery(rows: list[dict], output: Path, args) -> list[str]:
                     marker="o" if method == "MI" else "s", markersize=4, linewidth=1.2, label=method)
         n_replicates = len({row["replicate"] for row in subset})
         ax.set(xscale="log", xlabel="Distal-pair discovery budget (%)", ylim=(-.04, 1.04),
-               title=f"Cross-HGT = {hgt:g} · n = {n_replicates}",
                xticks=args.budget_percent, xticklabels=[f"{x:g}" for x in args.budget_percent])
         ax.tick_params(axis="x", labelrotation=45)
+        ax.text(.03, .05, f"Cross-HGT = {hgt:g}\nn = {n_replicates}",
+                transform=ax.transAxes, fontsize=8)
         ax.grid(axis="y", alpha=.2)
     axes[0][0].set_ylabel("Fraction of replicates recovering A–B")
     axes[0][0].legend(frameon=False)
-    fig.suptitle(f"D  Focal A–B recovery · mode {args.main_mode}")
     write_rows(output / "D_recovery_by_budget.tsv", summaries)
     write_rows(output / "D_recovery_per_replicate.tsv", rows)
     return save(fig, output, "D_focal_recovery_by_budget", args.formats) + [
@@ -579,7 +592,7 @@ def main() -> None:
         if int(case["mode"]) == args.main_mode and "D" in panels:
             recovery_rows.extend(recovery_by_budget(data, args))
         if case["case_id"] == example_id:
-            files.append(export_pairs(data, output))
+            files.append(export_pairs(data, output, args.distal_bp))
             if "B" in panels:
                 files += panel_b(data, output, args)
             if "C" in panels:
@@ -595,7 +608,7 @@ def main() -> None:
         if args.supplementary:
             supplementary = output / "supplementary" / case["case_id"]
             supplementary.mkdir(parents=True, exist_ok=True)
-            generated = [export_pairs(data, supplementary)]
+            generated = [export_pairs(data, supplementary, args.distal_bp)]
             generated += panel_b(data, supplementary, args)
             generated += panel_e(data, supplementary, args)
             if calibration_ready:
@@ -622,7 +635,7 @@ def main() -> None:
               "example_case_id": example_id, "main_cases": [row["case_id"] for row in main_cases],
               "input_sha256": input_hashes,
               "files": files, "skipped_panels": skipped,
-              "rank_rule": "one-based average ties; unavailable tests have no rank; C reranks both methods on identical finite-test pairs",
+              "rank_rule": "one-based average ties; C and supplementary rank comparisons rerank both methods on identical finite-test pairs with distance > distal-bp; local/unavailable pairs have no comparison rank",
               "lineage_rule": "existing covariance-component evaluator; >distal-bp filter before supplementary enrichment selection",
               "display_only_thinning": True,
               "p_plotting_floor": P_FLOOR,
