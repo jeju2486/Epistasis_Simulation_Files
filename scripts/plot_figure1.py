@@ -157,7 +157,15 @@ def save(fig, output: Path, stem: str, formats: list[str]) -> list[str]:
     files = []
     for fmt in formats:
         path = output / f"{stem}.{fmt}"
+        # SVG must retain editable points as vectors, not embedded raster images.
+        rasterized = [artist for artist in fig.findobj() if artist.get_rasterized()]
+        if fmt == "svg":
+            for artist in rasterized:
+                artist.set_rasterized(False)
         fig.savefig(path, dpi=300)
+        if fmt == "svg":
+            for artist in rasterized:
+                artist.set_rasterized(True)
         files.append(path.name)
     plt.close(fig)
     return files
@@ -194,7 +202,7 @@ def panel_b(data: dict, output: Path, args) -> list[str]:
     return files
 
 
-def panel_e(data: dict, output: Path, args) -> list[str]:
+def panel_e(data: dict, output: Path, args, panel: str = "E") -> list[str]:
     import matplotlib.pyplot as plt
     finite = np.isfinite(data["p"])
     fig, ax = plt.subplots(figsize=(5.5, 5.1), layout="constrained")
@@ -215,12 +223,12 @@ def panel_e(data: dict, output: Path, args) -> list[str]:
     ax.plot([1, maximum], [1, maximum], "--", color="black", linewidth=.8)
     ax.set(xscale="log", yscale="log", xlim=(.8, maximum * 1.1), ylim=(.8, maximum * 1.1),
            xlabel="Marginal MI rank (1 = highest)", ylabel="KOVAR P rank (1 = lowest P)",
-           title=f"E  {data['case']['case_id']}")
+           title=f"{panel}  {data['case']['case_id']}")
     ax.text(.02, .02, f"Same {data['n_finite']:,} finite-test pairs ranked by both methods\n"
             f"{data['n_pairs'] - data['n_finite']:,} unavailable KOVAR tests reported separately",
             transform=ax.transAxes, fontsize=8, va="bottom")
     ax.legend(frameon=False, fontsize=8)
-    return save(fig, output, f"E_{data['case']['case_id']}_identical_pair_ranks", args.formats)
+    return save(fig, output, f"{panel}_{data['case']['case_id']}_identical_pair_ranks", args.formats)
 
 
 def top_mask(values: np.ndarray, fraction: float, *, descending: bool,
@@ -378,6 +386,8 @@ def null_values(data: dict, null_pairs: dict, marginal_p: dict) -> tuple[list[fl
         if key[0] != case_id:
             continue
         index = triangular_index(key[1], key[2], n)
+        if int(data["case"]["mode"]) == 2 and index == data["focal"]:
+            raise ValueError("the implanted mode-2 A–B pair cannot be a calibration null")
         if key not in marginal_p:
             raise ValueError(f"missing independently calibrated marginal P: {key}")
         if math.isfinite(data["p"][index]):
@@ -432,15 +442,79 @@ def export_pairs(data: dict, output: Path) -> str:
     return path.name
 
 
+def recovery_by_budget(data: dict, args) -> list[dict]:
+    """Focal recovery at equal distal-candidate budgets, including cutoff ties."""
+    distal = data["distance"] > args.distal_bp
+    n_candidates = int(distal.sum())
+    focal = data["focal"]
+    status = ("not_maf_eligible" if focal is None else "not_distal" if not distal[focal]
+              else "available" if math.isfinite(data["p"][focal]) else "kovar_p_unavailable")
+    rows = []
+    for percent in args.budget_percent:
+        budget = max(1, math.ceil(percent / 100 * n_candidates)) if n_candidates else 0
+        for method, values, descending in (("MI", data["mi"], True), ("KOVAR", data["p"], False)):
+            selected = top_mask(np.where(distal, values, np.nan), percent / 100,
+                                descending=descending, budget=budget)
+            rows.append({"case_id": data["case"]["case_id"],
+                         "replicate": data["case"]["replicate"], "mode": data["case"]["mode"],
+                         "cross_hgt_probability": data["case"]["cross_hgt_probability"],
+                         "method": method, "budget_percent": percent, "nominal_budget": budget,
+                         "n_distal_candidates": n_candidates,
+                         "n_finite_distal_kovar": int((distal & np.isfinite(data["p"])).sum()),
+                         "n_selected_including_ties": int(selected.sum()), "focal_status": status,
+                         "recovered": int(selected[focal]) if focal is not None else 0})
+    return rows
+
+
+def panel_recovery(rows: list[dict], output: Path, args) -> list[str]:
+    import matplotlib.pyplot as plt
+    hgt_values = sorted({float(row["cross_hgt_probability"]) for row in rows})
+    fig, axes = plt.subplots(1, len(hgt_values), figsize=(3.1 * len(hgt_values), 3.7),
+                             sharey=True, squeeze=False, layout="constrained")
+    summaries = []
+    for ax, hgt in zip(axes[0], hgt_values):
+        subset = [row for row in rows if float(row["cross_hgt_probability"]) == hgt]
+        for method in COLORS:
+            fractions = []
+            for budget in args.budget_percent:
+                group = [row for row in subset if row["method"] == method and row["budget_percent"] == budget]
+                recovered = sum(row["recovered"] for row in group)
+                fraction = recovered / len(group)
+                fractions.append(fraction)
+                summaries.append({"mode": args.main_mode, "cross_hgt_probability": hgt,
+                                  "method": method, "budget_percent": budget, "n_replicates": len(group),
+                                  "n_recovered": recovered, "recovery_fraction": fraction})
+            ax.plot(args.budget_percent, fractions, color=COLORS[method],
+                    marker="o" if method == "MI" else "s", markersize=4, linewidth=1.2, label=method)
+        n_replicates = len({row["replicate"] for row in subset})
+        ax.set(xscale="log", xlabel="Distal-pair discovery budget (%)", ylim=(-.04, 1.04),
+               title=f"Cross-HGT = {hgt:g} · n = {n_replicates}",
+               xticks=args.budget_percent, xticklabels=[f"{x:g}" for x in args.budget_percent])
+        ax.tick_params(axis="x", labelrotation=45)
+        ax.grid(axis="y", alpha=.2)
+    axes[0][0].set_ylabel("Fraction of replicates recovering A–B")
+    axes[0][0].legend(frameon=False)
+    fig.suptitle(f"D  Focal A–B recovery · mode {args.main_mode}")
+    write_rows(output / "D_recovery_by_budget.tsv", summaries)
+    write_rows(output / "D_recovery_per_replicate.tsv", rows)
+    return save(fig, output, "D_focal_recovery_by_budget", args.formats) + [
+        "D_recovery_by_budget.tsv", "D_recovery_per_replicate.tsv"]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="manifests/cases.tsv")
     parser.add_argument("--case-id", action="append", help="exact case ID; repeat to select cases")
     parser.add_argument("--spa-mode", choices=("off", "auto"), required=True)
     parser.add_argument("--sample-reweighting", choices=("default", "none"), default="default")
-    parser.add_argument("--panels", nargs="+", choices=list("ABCDE"), default=list("ABCDE"))
+    parser.add_argument("--panels", nargs="+", choices=list("ABCD"), default=list("ABCD"))
+    parser.add_argument("--main-mode", type=int, choices=(0, 1, 2), default=2)
+    parser.add_argument("--example-replicate", type=int, default=1)
+    parser.add_argument("--example-hgt", type=float, default=.002)
+    parser.add_argument("--supplementary", action="store_true", help="also export per-case plots and control summaries for all manifest cases")
+    parser.add_argument("--budget-percent", nargs="+", type=float, default=[.01, .05, .1, .5, 1, 2, 5])
     parser.add_argument("--output-dir")
-    parser.add_argument("--formats", nargs="+", choices=("pdf", "svg", "png"), default=["pdf", "svg", "png"])
+    parser.add_argument("--formats", nargs="+", choices=("pdf", "svg", "png"), default=["png", "svg"])
     parser.add_argument("--distal-bp", type=int, default=10_000)
     parser.add_argument("--max-points", type=int, default=100_000)
     parser.add_argument("--top-fraction", type=float, default=.01)
@@ -449,6 +523,9 @@ def main() -> None:
     parser.add_argument("--marginal-pvalues", help="TSV with case_id,u,v,p_marginal; already calibrated P values")
     parser.add_argument("--calibration-note", help="null definition and marginal calibration provenance")
     args = parser.parse_args()
+    if any(not math.isfinite(x) or not 0 < x <= 100 for x in args.budget_percent):
+        parser.error("budget-percent values must be finite and in (0, 100]")
+    args.budget_percent = sorted(set(args.budget_percent))
     if args.distal_bp < 0 or args.max_points < 1 or not 0 < args.top_fraction <= 1 or not 0 < args.alpha < 1:
         parser.error("require distal-bp >= 0, max-points > 0, 0 < top-fraction <= 1 and 0 < alpha < 1")
     calibration_ready = bool(args.null_pairs and args.marginal_pvalues and args.calibration_note)
@@ -468,57 +545,88 @@ def main() -> None:
         cases = [row for row in cases if row["case_id"] in args.case_id]
     if not cases:
         parser.error("no cases selected")
+    main_cases = [row for row in cases if int(row["mode"]) == args.main_mode]
+    if not main_cases:
+        parser.error("no cases for main-mode in the selected manifest")
+    if len({(int(row["replicate"]), float(row["cross_hgt_probability"])) for row in main_cases}) != len(main_cases):
+        parser.error("duplicate replicate/HGT conditions in main-mode")
+    examples = [row for row in main_cases if int(row["replicate"]) == args.example_replicate
+                and math.isclose(float(row["cross_hgt_probability"]), args.example_hgt, rel_tol=0, abs_tol=1e-12)]
+    if panels & {"A", "B", "C"} and len(examples) != 1:
+        parser.error("the predefined example is absent or ambiguous; set example-replicate/example-hgt explicitly")
+    example_id = examples[0]["case_id"] if examples else None
+    processing_cases = cases if args.supplementary else main_cases
     import matplotlib
     matplotlib.use("Agg")
     matplotlib.rcParams.update({"font.size": 9, "font.family": "DejaVu Sans",
                                "pdf.fonttype": 42, "svg.fonttype": "none"})
-    output = repo_path(args.output_dir or f"results/figure1_spa_{args.spa_mode}_{args.sample_reweighting}")
+    output = repo_path(args.output_dir or f"results/figure1_redesigned_spa_{args.spa_mode}_{args.sample_reweighting}")
     output.mkdir(parents=True, exist_ok=True)
     null_pairs = keyed_table(repo_path(args.null_pairs), False) if calibration_ready else {}
     marginal_p = keyed_table(repo_path(args.marginal_pvalues), True) if calibration_ready else {}
     manifest_ids = set(ids)
     if any(key[0] not in manifest_ids for key in null_pairs.keys() | marginal_p.keys()):
         parser.error("calibration tables contain a case not present in the manifest")
-    focal_rows, lineage_rows, calibration, files, input_hashes = [], [], {}, [], {}
-    for case in cases:
+    focal_rows, lineage_rows, recovery_rows, files, input_hashes = [], [], [], [], {}
+    skipped = {}
+    for case in processing_cases:
         print(f"[figure1] {case['case_id']}", flush=True)
         data = read_case(case, args.spa_mode, args.sample_reweighting)
         input_hashes.update(data["input_sha256"])
         focal, lineage = summarize(data, args)
         focal_rows.append(focal)
         lineage_rows.append(lineage)
-        files.append(export_pairs(data, output))
-        if "B" in panels:
-            files += panel_b(data, output, args)
-        if "E" in panels:
-            files += panel_e(data, output, args)
-        if "A" in panels and calibration_ready:
-            marginal, adjusted = null_values(data, null_pairs, marginal_p)
-            group = calibration.setdefault(condition(case), ([], []))
-            group[0].extend(marginal)
-            group[1].extend(adjusted)
-    write_rows(output / "C_focal_cases.tsv", focal_rows)
-    write_rows(output / "D_lineage_cases.tsv", lineage_rows)
-    files += ["C_focal_cases.tsv", "D_lineage_cases.tsv"]
-    if "C" in panels:
-        files += panel_c(focal_rows, output, args)
-    if "D" in panels:
-        files += panel_d(lineage_rows, output, args)
-    if "A" in panels and calibration_ready:
-        files += panel_a(calibration, output, args)
-    skipped = {"A": "Needs independent null membership and calibrated marginal P values"}
-    if "A" not in panels or calibration_ready:
-        skipped = {}
+        if int(case["mode"]) == args.main_mode and "D" in panels:
+            recovery_rows.extend(recovery_by_budget(data, args))
+        if case["case_id"] == example_id:
+            files.append(export_pairs(data, output))
+            if "B" in panels:
+                files += panel_b(data, output, args)
+            if "C" in panels:
+                files += panel_e(data, output, args, panel="C")
+            if "A" in panels:
+                if not calibration_ready:
+                    skipped["A"] = "Needs independent null membership and calibrated marginal P values"
+                else:
+                    marginal, adjusted = null_values(data, null_pairs, marginal_p)
+                    if not marginal:
+                        raise ValueError("the predefined example has no finite paired null P values")
+                    files += panel_a({condition(case): (marginal, adjusted)}, output, args)
+        if args.supplementary:
+            supplementary = output / "supplementary" / case["case_id"]
+            supplementary.mkdir(parents=True, exist_ok=True)
+            generated = [export_pairs(data, supplementary)]
+            generated += panel_b(data, supplementary, args)
+            generated += panel_e(data, supplementary, args)
+            if calibration_ready:
+                marginal, adjusted = null_values(data, null_pairs, marginal_p)
+                if marginal:
+                    generated += panel_a({condition(case): (marginal, adjusted)}, supplementary, args)
+                else:
+                    skipped[f"supplementary/{case['case_id']}/A"] = "No paired finite null P values supplied"
+            else:
+                skipped[f"supplementary/{case['case_id']}/A"] = "No independent null/calibration inputs supplied"
+            files.extend(str((supplementary / name).relative_to(output)) for name in generated)
+    write_rows(output / "focal_cases.tsv", focal_rows)
+    write_rows(output / "lineage_cases.tsv", lineage_rows)
+    files += ["focal_cases.tsv", "lineage_cases.tsv"]
+    if recovery_rows:
+        files += panel_recovery(recovery_rows, output, args)
+    if args.supplementary:
+        supplementary = output / "supplementary"
+        generated = panel_c(focal_rows, supplementary, args) + panel_d(lineage_rows, supplementary, args)
+        files.extend(str((supplementary / name).relative_to(output)) for name in generated)
     for path in [repo_path(args.manifest)] + ([repo_path(args.null_pairs), repo_path(args.marginal_pvalues)] if calibration_ready else []):
         input_hashes[str(path)] = sha256_file(path)
-    report = {"settings": vars(args), "cases": [row["case_id"] for row in cases],
+    report = {"settings": vars(args), "cases": [row["case_id"] for row in processing_cases],
+              "example_case_id": example_id, "main_cases": [row["case_id"] for row in main_cases],
               "input_sha256": input_hashes,
               "files": files, "skipped_panels": skipped,
-              "rank_rule": "one-based average ties; unavailable tests have no rank; E reranks both methods on identical finite-test pairs",
-              "lineage_rule": "existing covariance-component evaluator; >distal-bp filter before D top-set selection",
+              "rank_rule": "one-based average ties; unavailable tests have no rank; C reranks both methods on identical finite-test pairs",
+              "lineage_rule": "existing covariance-component evaluator; >distal-bp filter before supplementary enrichment selection",
               "display_only_thinning": True,
               "p_plotting_floor": P_FLOOR,
-              "inference": "descriptive replicate points; no pooled-pair confidence intervals; no assumed outcome"}
+              "inference": "D summarizes focal recovery across replicates, not conventional precision; no assumed outcome"}
     (output / "figure1_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for panel, reason in skipped.items():
         print(f"[pending] panel {panel}: {reason}")

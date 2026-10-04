@@ -123,15 +123,18 @@ class Figure1Tests(unittest.TestCase):
             (root / "p.tsv").write_text("case_id\tu\tv\tp_marginal\ntest_case\t0\t1\t0.5\n", encoding="utf-8")
             output = root / "plots"
             command = [sys.executable, str(SCRIPTS / "plot_figure1.py"), "--manifest", str(manifest),
-                       "--spa-mode", "off", "--output-dir", str(output), "--max-points", "1",
+                       "--spa-mode", "off", "--example-hgt", "0", "--output-dir", str(output), "--max-points", "1",
                        "--null-pairs", str(root / "null.tsv"), "--marginal-pvalues", str(root / "p.tsv"),
                        "--calibration-note", "synthetic wiring fixture, not biological null evidence"]
             subprocess.run(command, check=True, capture_output=True, text=True)
             report = json.loads((output / "figure1_report.json").read_text())
             self.assertEqual(report["skipped_panels"], {})
-            self.assertEqual(len(list(output.glob("*.png"))), 7)
-            self.assertEqual(len(list(output.glob("*.svg"))), 7)
-            self.assertEqual(len(list(output.glob("*.pdf"))), 7)
+            self.assertEqual(len(list(output.glob("*.png"))), 5)
+            self.assertEqual(len(list(output.glob("*.svg"))), 5)
+            self.assertEqual(len(list(output.glob("*.pdf"))), 0)
+            self.assertEqual(report["example_case_id"], "test_case")
+            for svg in output.glob("*.svg"):
+                self.assertNotIn("<image", svg.read_text(encoding="utf-8"))
             for name in report["files"]:
                 self.assertGreater((output / name).stat().st_size, 0)
             # Read exported data: unavailable KOVAR pair is retained, not omitted.
@@ -139,7 +142,7 @@ class Figure1Tests(unittest.TestCase):
                 pairs = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(len(pairs), 6)
             self.assertEqual(sum(row["kovar_status"] == "unavailable" for row in pairs), 1)
-            # No calibration input: default generates B–E and explicitly marks A pending.
+            # No calibration input: default generates B–D and explicitly marks A pending.
             pending = root / "pending"
             subprocess.run(command[:command.index("--null-pairs")] +
                            ["--output-dir", str(pending), "--formats", "png"],
