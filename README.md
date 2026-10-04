@@ -287,7 +287,7 @@ remain; case identities and conditions are recorded in filenames and the report.
 
 | Main panel | Content |
 | --- | --- |
-| A | QQ comparison for replicate 1, mode 2, cross-HGT 0.002, using independently defined null pairs and calibrated marginal P values. |
+| A | QQ comparison for replicate 1, mode 2, cross-HGT 0.002, using KOVAR primary P values only, in two distance groups (default ≤10 kb and >10 kb). |
 | B | Two aligned-by-coordinate plots for the same example: distance versus native MI and versus −log10(KOVAR primary P). A–B and the ≤10 kb exclusion are marked. Each plot is exported separately for assembly. |
 | C | Marginal MI rank versus KOVAR P rank in that example, with the equality diagonal, A–B and distal lineage-associated pairs highlighted. |
 | D | Focal A–B recovery versus discovery budget across all mode-2 replicates, with one small plot per HGT level. The denominator and actual replicate count are reported. |
@@ -301,12 +301,11 @@ python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off
 The five-replicate design gives **15 mode-2 cases** for D: five replicates at
 three HGT levels. A–C use the **predeclared first replicate at HGT 0.002**; the
 script does not select the best-looking result. Outputs are written to
-`results/figure1_redesigned_spa_off_default/`. A is explicitly marked pending
-unless the calibration inputs below are supplied; B–D still export normally.
+`results/figure1_redesigned_spa_off_default/`. A is generated directly from completed KOVAR outputs; no external calibration
+files are needed.
 Use `--spa-mode auto` for a separate automatic-SPA output directory.
 
-Optional supplementary output includes per-case QQ plots where calibration is
-available, distance plots, rank comparisons, pair data, and across-condition
+Optional supplementary output includes per-case KOVAR QQ plots, distance plots, rank comparisons, pair data, and across-condition
 focal-rank/recovery and lineage-enrichment summaries. It includes all 45 cases in
 the full manifest, including modes 0 and 1, and therefore requires their completed
 SpydrPick and KOVAR stages as well:
@@ -341,7 +340,7 @@ python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
 also restricts D's denominator, so use it only when a partial summary is intended.
 `--main-mode` defaults to 2. `--sample-reweighting none` selects unweighted MI
 outputs as a sensitivity analysis. Use a fresh `--output-dir` for a different
-selection/calibration choice. `figure1_report.json` lists current generated files,
+selection or QQ distance split. `figure1_report.json` lists current generated files,
 chosen example, contributing cases, skipped panels, settings and input hashes;
 it does not claim older files left in an output directory as current results.
 
@@ -388,38 +387,38 @@ Unclassified joint counts are reported and excluded. No eligible lineage pairs
 makes enrichment unavailable rather than a zero effect. Labels are used only
 for evaluation, never supplied as association-method inputs.
 
-### Panel A null and marginal calibration inputs
+### Panel A KOVAR QQ plot
 
-Raw MI is not a P value. Neither nonfocal pairs nor mode-0/1 pairs are automatically
-valid nulls because local LD and lineage covariance remain. Supply independently
-defined null membership and already calibrated marginal P values; the plotter
-does not add a null-generation analysis or select nulls by observed significance.
-The implanted mode-2 A–B pair is rejected if supplied as a null.
+Panel A shows KOVAR primary P values against uniform-reference quantiles. It uses
+all finite tests, including focal and background association signals. It is a
+P-value distribution diagnostic, not proof of null calibration: departure from
+the diagonal may include true associations, local LD or residual structure.
+Marginal MI is not plotted on a P-value axis and is not used by A.
 
-The tab-separated headers are:
-
-```text
-# null_pairs.tsv (omit this comment from the actual file)
-case_id	u	v
-# marginal_pvalues.tsv (omit this comment from the actual file)
-case_id	u	v	p_marginal
-```
-
-`u` and `v` are zero-based filtered-alignment columns, not genomic coordinates
-or the original one-based SpydrPick indices. Each declared null pair must exist
-in its case and have a valid calibrated marginal P value. Both QQ curves use the
-identical null pairs with finite KOVAR tests. Main A uses only the example case;
-supplementary QQ plots are separate by case rather than pooling replicates.
+There are exactly two distance groups. The default split is **10 kb**, consistent
+with the manuscript's operational local exclusion: **0–10 kb (including 10 kb)**
+and **>10 kb**. To use the original plot's finer split instead:
 
 ```bash
 python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
-  --null-pairs path/to/null_pairs.tsv \
-  --marginal-pvalues path/to/marginal_pvalues.tsv \
-  --calibration-note 'Specify the independent null definition, calibration dataset, procedure and candidate-selection treatment' \
-  --supplementary
+  --qq-split-bp 1000 --supplementary
 ```
 
-`--panels A` without all three calibration arguments fails clearly. If calibration
-inputs are supplied but none support the chosen example, main A fails explicitly.
-Missing supplementary-case null inputs are reported as pending. Calibration notes
-and source hashes are retained for reproducibility and final figure legends.
+This produces **0–1 kb (including 1 kb)** and **>1 kb** QQ curves. The QQ split is
+independent of `--distal-bp`; changing it to 1 kb does not change the >10 kb rank
+comparison or recovery universe.
+
+To regenerate only the example's panel A:
+
+```bash
+python scripts/plot_figure1.py --manifest manifests/cases.tsv --spa-mode off \
+  --panels A
+```
+
+Files are `A_<example_case_id>_kovar_qq.png` and `.svg`, with a matching `.tsv`
+containing every finite P value's ordered position and expected quantile. The
+legend reports each group's finite test count. Failed/unavailable tests are
+excluded from QQ curves and retained in pair-level data. Each supplementary case
+gets its own QQ plot; replicates are not pooled. Titles remain omitted.
+`--null-pairs`, `--marginal-pvalues` and `--calibration-note` have been removed;
+these were requirements for the superseded marginal-versus-KOVAR calibration panel.

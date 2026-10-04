@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Export manuscript Figure 1 panels from completed simulation analyses.
 
-MI is never treated as a P value. Panel A requires an explicit null-pair list
-and separately calibrated marginal P values. No simulation or model is rerun.
+Panel A shows KOVAR primary P-value distributions in two distance groups.
+MI is never treated as a P value. No simulation or model is rerun.
 """
 from __future__ import annotations
 
@@ -367,71 +367,42 @@ def panel_d(rows: list[dict], output: Path, args) -> list[str]:
     return save(fig, output, "D_lineage_enrichment", args.formats)
 
 
-def keyed_table(path: Path, pvalues: bool) -> dict:
-    result = {}
-    required = {"case_id", "u", "v"} | ({"p_marginal"} if pvalues else set())
-    with path.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if not required.issubset(reader.fieldnames or []):
-            raise ValueError(f"{path}: expected columns {sorted(required)}")
-        for row in reader:
-            a, b = sorted((int(row["u"]), int(row["v"])))
-            key = row["case_id"], a, b
-            if a < 0 or a == b or key in result:
-                raise ValueError(f"{path}: invalid or duplicate pair {key}")
-            value = valid_p(row["p_marginal"]) if pvalues else True
-            if pvalues and not math.isfinite(value):
-                raise ValueError(f"{path}: invalid calibrated marginal P for {key}")
-            result[key] = value
-    if not result:
-        raise ValueError(f"{path}: empty input")
-    return result
+def qq_groups(data: dict, split_bp: int) -> list[tuple[str, np.ndarray]]:
+    finite = np.isfinite(data["p"])
+    split_kb = split_bp / 1000
+    return [(f"0–{split_kb:g} kb", np.sort(data["p"][finite & (data["distance"] <= split_bp)])),
+            (f">{split_kb:g} kb", np.sort(data["p"][finite & (data["distance"] > split_bp)]))]
 
 
-def null_values(data: dict, null_pairs: dict, marginal_p: dict) -> tuple[list[float], list[float]]:
-    values, adjusted = [], []
-    case_id = data["case"]["case_id"]
-    n = len(data["positions"])
-    for key in null_pairs:
-        if key[0] != case_id:
-            continue
-        index = triangular_index(key[1], key[2], n)
-        if int(data["case"]["mode"]) == 2 and index == data["focal"]:
-            raise ValueError("the implanted mode-2 A–B pair cannot be a calibration null")
-        if key not in marginal_p:
-            raise ValueError(f"missing independently calibrated marginal P: {key}")
-        if math.isfinite(data["p"][index]):
-            values.append(marginal_p[key])
-            adjusted.append(data["p"][index])
-    return values, adjusted
-
-
-def panel_a(groups: dict, output: Path, args) -> list[str]:
+def panel_a(data: dict, output: Path, args) -> list[str]:
+    """KOVAR-only QQ diagnostic; all finite tests, not a declared-null subset."""
     import matplotlib.pyplot as plt
-    files, rows = [], []
-    for (mode, hgt), (marginal, adjusted) in sorted(groups.items()):
-        if not marginal:
-            continue
-        fig, ax = plt.subplots(figsize=(5.2, 4.8), layout="constrained")
-        maximum = 1.
-        for method, values in (("MI", marginal), ("KOVAR", adjusted)):
-            ordered = np.sort(values)
+    groups = qq_groups(data, args.qq_split_bp)
+    if not any(len(values) for _label, values in groups):
+        raise ValueError(f"{data['case']['case_id']}: no finite KOVAR P values for panel A")
+    stem = f"A_{data['case']['case_id']}_kovar_qq"
+    fig, ax = plt.subplots(figsize=(5.2, 4.8), layout="constrained")
+    maximum = 1.
+    table = output / f"{stem}.tsv"
+    with table.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(["case_id", "distance_group", "n_finite", "order", "expected_p", "observed_p"])
+        for (label, ordered), color in zip(groups, ("#0072B2", "#D55E00")):
+            if not len(ordered):
+                continue
             expected = (np.arange(len(ordered)) + .5) / len(ordered)
             x, y = -np.log10(expected), -np.log10(np.maximum(ordered, P_FLOOR))
-            ax.plot(x, y, color=COLORS[method], linewidth=1.1, marker=".", markersize=3,
-                    label=f"{'Calibrated marginal' if method == 'MI' else 'KOVAR'} (n={len(values):,})")
+            indices = sample_indices(np.arange(len(ordered)), args.max_points)
+            ax.plot(x[indices], y[indices], color=color, linewidth=1.1,
+                    marker=".", markersize=2, label=f"{label} (n={len(ordered):,})")
             maximum = max(maximum, float(x.max()), float(y.max()))
-            rows.extend({"mode": mode, "cross_hgt_probability": hgt, "method": method,
-                         "expected_p": e, "observed_p": p} for e, p in zip(expected, ordered))
-        ax.plot([0, maximum], [0, maximum], "--", color="black", linewidth=.8)
-        ax.set(xlabel="Expected −log10(P)", ylabel="Observed −log10(P)")
-        ax.legend(frameon=False, fontsize=8)
-        slug = f"mode_{mode}_hgt_{hgt:g}".replace(".", "p")
-        files += save(fig, output, f"A_qq_{slug}", args.formats)
-    if not rows:
-        raise ValueError("no null pairs have finite paired marginal/KOVAR P values")
-    write_rows(output / "A_qq.tsv", rows)
-    return files + ["A_qq.tsv"]
+            writer.writerows((data["case"]["case_id"], label, len(ordered), i + 1, e, p)
+                             for i, (e, p) in enumerate(zip(expected, ordered)))
+    ax.plot([0, maximum], [0, maximum], "--", color="black", linewidth=.8)
+    ax.set(xlabel="Expected −log10(P)", ylabel="Observed −log10(KOVAR primary P)")
+    ax.grid(alpha=.18, linewidth=.6)
+    ax.legend(frameon=False, fontsize=8)
+    return save(fig, output, stem, args.formats) + [table.name]
 
 
 def export_pairs(data: dict, output: Path, distal_bp: int = 10_000) -> str:
@@ -532,21 +503,17 @@ def main() -> None:
     parser.add_argument("--max-points", type=int, default=100_000)
     parser.add_argument("--top-fraction", type=float, default=.01)
     parser.add_argument("--alpha", type=float, default=.05)
-    parser.add_argument("--null-pairs", help="TSV with case_id,u,v; independently defined null membership")
-    parser.add_argument("--marginal-pvalues", help="TSV with case_id,u,v,p_marginal; already calibrated P values")
-    parser.add_argument("--calibration-note", help="null definition and marginal calibration provenance")
+    parser.add_argument("--qq-split-bp", type=int, default=10_000,
+                        help="KOVAR QQ distance boundary; default 10000, use 1000 for 0–1 kb versus >1 kb")
     args = parser.parse_args()
     if any(not math.isfinite(x) or not 0 < x <= 100 for x in args.budget_percent):
         parser.error("budget-percent values must be finite and in (0, 100]")
     args.budget_percent = sorted(set(args.budget_percent))
     if args.distal_bp < 0 or args.max_points < 1 or not 0 < args.top_fraction <= 1 or not 0 < args.alpha < 1:
         parser.error("require distal-bp >= 0, max-points > 0, 0 < top-fraction <= 1 and 0 < alpha < 1")
-    calibration_ready = bool(args.null_pairs and args.marginal_pvalues and args.calibration_note)
-    if any((args.null_pairs, args.marginal_pvalues, args.calibration_note)) and not calibration_ready:
-        parser.error("supply null-pairs, marginal-pvalues and calibration-note together")
+    if args.qq_split_bp <= 0:
+        parser.error("qq-split-bp must be positive")
     panels = set(args.panels)
-    if panels == {"A"} and not calibration_ready:
-        parser.error("panel A requires null-pairs, marginal-pvalues and calibration-note")
     cases = read_tsv(repo_path(args.manifest))
     ids = [row["case_id"] for row in cases]
     if len(set(ids)) != len(ids) or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", x) for x in ids):
@@ -575,11 +542,6 @@ def main() -> None:
                                "pdf.fonttype": 42, "svg.fonttype": "none"})
     output = repo_path(args.output_dir or f"results/figure1_redesigned_spa_{args.spa_mode}_{args.sample_reweighting}")
     output.mkdir(parents=True, exist_ok=True)
-    null_pairs = keyed_table(repo_path(args.null_pairs), False) if calibration_ready else {}
-    marginal_p = keyed_table(repo_path(args.marginal_pvalues), True) if calibration_ready else {}
-    manifest_ids = set(ids)
-    if any(key[0] not in manifest_ids for key in null_pairs.keys() | marginal_p.keys()):
-        parser.error("calibration tables contain a case not present in the manifest")
     focal_rows, lineage_rows, recovery_rows, files, input_hashes = [], [], [], [], {}
     skipped = {}
     for case in processing_cases:
@@ -598,27 +560,14 @@ def main() -> None:
             if "C" in panels:
                 files += panel_e(data, output, args, panel="C")
             if "A" in panels:
-                if not calibration_ready:
-                    skipped["A"] = "Needs independent null membership and calibrated marginal P values"
-                else:
-                    marginal, adjusted = null_values(data, null_pairs, marginal_p)
-                    if not marginal:
-                        raise ValueError("the predefined example has no finite paired null P values")
-                    files += panel_a({condition(case): (marginal, adjusted)}, output, args)
+                files += panel_a(data, output, args)
         if args.supplementary:
             supplementary = output / "supplementary" / case["case_id"]
             supplementary.mkdir(parents=True, exist_ok=True)
             generated = [export_pairs(data, supplementary, args.distal_bp)]
             generated += panel_b(data, supplementary, args)
             generated += panel_e(data, supplementary, args)
-            if calibration_ready:
-                marginal, adjusted = null_values(data, null_pairs, marginal_p)
-                if marginal:
-                    generated += panel_a({condition(case): (marginal, adjusted)}, supplementary, args)
-                else:
-                    skipped[f"supplementary/{case['case_id']}/A"] = "No paired finite null P values supplied"
-            else:
-                skipped[f"supplementary/{case['case_id']}/A"] = "No independent null/calibration inputs supplied"
+            generated += panel_a(data, supplementary, args)
             files.extend(str((supplementary / name).relative_to(output)) for name in generated)
     write_rows(output / "focal_cases.tsv", focal_rows)
     write_rows(output / "lineage_cases.tsv", lineage_rows)
@@ -629,8 +578,7 @@ def main() -> None:
         supplementary = output / "supplementary"
         generated = panel_c(focal_rows, supplementary, args) + panel_d(lineage_rows, supplementary, args)
         files.extend(str((supplementary / name).relative_to(output)) for name in generated)
-    for path in [repo_path(args.manifest)] + ([repo_path(args.null_pairs), repo_path(args.marginal_pvalues)] if calibration_ready else []):
-        input_hashes[str(path)] = sha256_file(path)
+    input_hashes[str(repo_path(args.manifest))] = sha256_file(repo_path(args.manifest))
     report = {"settings": vars(args), "cases": [row["case_id"] for row in processing_cases],
               "example_case_id": example_id, "main_cases": [row["case_id"] for row in main_cases],
               "input_sha256": input_hashes,
@@ -639,6 +587,7 @@ def main() -> None:
               "lineage_rule": "existing covariance-component evaluator; >distal-bp filter before supplementary enrichment selection",
               "display_only_thinning": True,
               "p_plotting_floor": P_FLOOR,
+              "qq_interpretation": "KOVAR-only distribution diagnostic using all finite primary P values in two distance groups; includes focal and background signals, not an independent-null calibration claim",
               "inference": "D summarizes focal recovery across replicates, not conventional precision; no assumed outcome"}
     (output / "figure1_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for panel, reason in skipped.items():
