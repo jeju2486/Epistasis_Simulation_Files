@@ -27,7 +27,8 @@ from spydrpick_case import output_name, parse_edge
 COLORS = {"MI": "black", "KOVAR": "#D00000"}
 LINESTYLES = {"MI": "--", "KOVAR": "-"}
 BACKGROUND_AREA = 8
-TARGET_AREA = 2 * BACKGROUND_AREA
+TARGET_RADIUS_RATIO = 2.5
+TARGET_AREA = TARGET_RADIUS_RATIO ** 2 * BACKGROUND_AREA
 CATEGORIES = {"other_distant": 0, "focal_AB": 1, "lineage_driven": 2,
               "focal_proximal": 3, "short_distance": 4, "within_population": 5,
               "unclassified": 6}
@@ -235,15 +236,20 @@ def panel_e(data: dict, output: Path, args, panel: str = "E") -> list[str]:
         x, y = float(mi_rank[focal]), float(kovar_rank[focal])
         ax.plot([x, x], [.8, y], color=COLORS["KOVAR"], linestyle=":", linewidth=.9)
         ax.plot([.8, x], [y, y], color=COLORS["KOVAR"], linestyle=":", linewidth=.9)
-        rank_label = lambda value: f"{value:,.0f}" if value.is_integer() else f"{value:,.1f}"
-        ax.annotate(rank_label(x), xy=(x, 0), xycoords=ax.get_xaxis_transform(),
-                    xytext=(0, -28), textcoords="offset points", ha="center", va="top",
-                    color=COLORS["KOVAR"], fontsize=8, annotation_clip=False)
-        ax.annotate(rank_label(y), xy=(0, y), xycoords=ax.get_yaxis_transform(),
-                    xytext=(-38, 0), textcoords="offset points", ha="right", va="center",
-                    color=COLORS["KOVAR"], fontsize=8, annotation_clip=False)
-        ax.xaxis.labelpad = 35
-        ax.yaxis.labelpad = 65
+        from matplotlib.ticker import FixedLocator, FuncFormatter
+        for axis, value in ((ax.xaxis, x), (ax.yaxis, y)):
+            previous_formatter = axis.get_major_formatter()
+            lower, upper = axis.get_view_interval()
+            ticks = [float(tick) for tick in axis.get_majorticklocs()
+                     if lower <= tick <= upper and abs(math.log10(tick / value)) > .15]
+            axis.set_major_locator(FixedLocator(sorted(ticks + [value])))
+            def label_rank(tick, position, target=value, original=previous_formatter):
+                if math.isclose(tick, target, rel_tol=1e-10):
+                    return f"{target:,.0f}" if target.is_integer() else f"{target:,.1f}"
+                return original(tick, position)
+            axis.set_major_formatter(FuncFormatter(label_rank))
+            for tick, label in zip(axis.get_majorticklocs(), axis.get_majorticklabels()):
+                label.set_color(COLORS["KOVAR"] if math.isclose(tick, value, rel_tol=1e-10) else "black")
     ax.legend(frameon=False, fontsize=8)
     return save(fig, output, f"{panel}_{data['case']['case_id']}_identical_pair_ranks", args.formats)
 

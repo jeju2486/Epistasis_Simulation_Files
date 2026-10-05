@@ -284,8 +284,8 @@ editable vector elements; PDF is an optional additional format. The script reads
 completed analyses without rerunning simulation or association models.
 All figures omit titles and use black/opaque red (`#D00000`) colours. Method
 comparison curves use dashed black for MI and solid red for KOVAR. The implanted
-A–B pair is labelled **Target pair** and has twice the background marker area
-(approximately 1.4 times the diameter), without a thick outline. Rank plots
+A–B pair is labelled **Target pair** and has 2.5 times the background marker
+radius (6.25 times its area), without a thick outline. Rank plots
 retain background points in black but omit their legend entry and explanatory
 text. D omits the lower-corner HGT/sample-count descriptions; its left-to-right
 HGT order and replicate counts are recorded in the recovery table for captions.
@@ -297,7 +297,9 @@ B has no shaded local-distance region and uses an unlabelled dotted line at
 **−log10(p-value)**; the marginal plot retains **Mutual information (MI)** because
 it has no P values. Rank comparisons still filter ≤10 kb before reranking.
 The target point has thin red dotted guides to both axes, with the exact marginal
-and KOVAR ranks printed beside their projections. Tied ranks retain decimals.
+and KOVAR ranks shown as red axis tick labels at their projections. Normal label
+padding is retained; nearby standard ticks are omitted to prevent overlap.
+Tied ranks retain decimals.
 The QQ panel uses equal x/y limits and a square plotting area. Distance, rank and
 QQ plots omit grids; recovery plots retain light horizontal guides. D's y ticks
 show actual recovery counts (`0/5` through `5/5` in the full design), using the
