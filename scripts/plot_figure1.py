@@ -207,7 +207,8 @@ def panel_b(data: dict, output: Path, args) -> list[str]:
         ax.axvline(args.distal_bp / 1000, color="black", linestyle=":", linewidth=1)
         ax.set(xlabel="Distance between loci (kb)", ylabel=ylabel,
                xlim=(0, None), ylim=(0, None))
-        ax.legend(frameon=False, fontsize=8)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(frameon=False, fontsize=8)
         files += save(fig, output, f"B_{data['case']['case_id']}_{method}", args.formats)
     return files
 
@@ -250,7 +251,8 @@ def panel_e(data: dict, output: Path, args, panel: str = "E") -> list[str]:
             axis.set_major_formatter(FuncFormatter(label_rank))
             for tick, label in zip(axis.get_majorticklocs(), axis.get_majorticklabels()):
                 label.set_color(COLORS["KOVAR"] if math.isclose(tick, value, rel_tol=1e-10) else "black")
-    ax.legend(frameon=False, fontsize=8)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(frameon=False, fontsize=8)
     return save(fig, output, f"{panel}_{data['case']['case_id']}_identical_pair_ranks", args.formats)
 
 
