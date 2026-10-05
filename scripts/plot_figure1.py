@@ -24,7 +24,10 @@ from run_kovar_case import result_name, sha256_file
 from simflow import read_tsv, repo_path
 from spydrpick_case import output_name, parse_edge
 
-COLORS = {"MI": "black", "KOVAR": "red"}
+COLORS = {"MI": "black", "KOVAR": "#D00000"}
+LINESTYLES = {"MI": "--", "KOVAR": "-"}
+BACKGROUND_AREA = 8
+TARGET_AREA = 2 * BACKGROUND_AREA
 CATEGORIES = {"other_distant": 0, "focal_AB": 1, "lineage_driven": 2,
               "focal_proximal": 3, "short_distance": 4, "within_population": 5,
               "unclassified": 6}
@@ -194,14 +197,14 @@ def panel_b(data: dict, output: Path, args) -> list[str]:
         y = data[key] if key == "mi" else -np.log10(np.maximum(data[key], P_FLOOR))
         indices = sample_indices(np.flatnonzero(np.isfinite(y)), args.max_points)
         fig, ax = plt.subplots(figsize=(6.2, 4.5), layout="constrained")
-        ax.scatter(data["distance"][indices] / 1000, y[indices], s=5,
+        ax.scatter(data["distance"][indices] / 1000, y[indices], s=BACKGROUND_AREA,
                    color="black", alpha=.25, linewidths=0, rasterized=True)
         focal = data["focal"]
         if focal is not None and math.isfinite(y[focal]):
-            ax.scatter(data["distance"][focal] / 1000, y[focal], marker="o", s=125,
-                       color="red", edgecolor="red", linewidth=1.5, label="Target pair", zorder=4)
+            ax.scatter(data["distance"][focal] / 1000, y[focal], marker="o", s=TARGET_AREA,
+                       color=COLORS["KOVAR"], alpha=1, linewidths=0, label="Target pair", zorder=4)
         ax.axvline(args.distal_bp / 1000, color="black", linestyle=":", linewidth=1)
-        ax.set(xlabel="Genomic position", ylabel=ylabel,
+        ax.set(xlabel="Distance between loci (kb)", ylabel=ylabel,
                xlim=(0, None), ylim=(0, None))
         ax.legend(frameon=False, fontsize=8)
         files += save(fig, output, f"B_{data['case']['case_id']}_{method}", args.formats)
@@ -216,18 +219,31 @@ def panel_e(data: dict, output: Path, args, panel: str = "E") -> list[str]:
     if data["focal"] is not None:
         background[data["focal"]] = False
     indices = sample_indices(np.flatnonzero(background), args.max_points)
-    ax.scatter(mi_rank[indices], kovar_rank[indices], s=8, color="black",
-               alpha=.3, marker=".", linewidths=0, rasterized=True)
+    ax.scatter(mi_rank[indices], kovar_rank[indices], s=BACKGROUND_AREA, color="black",
+               alpha=.3, marker="o", linewidths=0, rasterized=True)
     focal = data["focal"]
     if focal is not None and finite[focal]:
         ax.scatter(mi_rank[focal], kovar_rank[focal],
-                   marker="o", s=145, color="red", edgecolor="red", linewidth=1.5,
+                   marker="o", s=TARGET_AREA, color=COLORS["KOVAR"], alpha=1, linewidths=0,
                    label="Target pair", zorder=5)
     n_shared = int(finite.sum())
     maximum = max(2, n_shared)
     ax.plot([1, maximum], [1, maximum], "--", color="black", linewidth=.8)
     ax.set(xscale="log", yscale="log", xlim=(.8, maximum * 1.1), ylim=(.8, maximum * 1.1),
            xlabel="Marginal MI rank (1 = highest)", ylabel="KOVAR P rank (1 = lowest P)")
+    if focal is not None and finite[focal]:
+        x, y = float(mi_rank[focal]), float(kovar_rank[focal])
+        ax.plot([x, x], [.8, y], color=COLORS["KOVAR"], linestyle=":", linewidth=.9)
+        ax.plot([.8, x], [y, y], color=COLORS["KOVAR"], linestyle=":", linewidth=.9)
+        rank_label = lambda value: f"{value:,.0f}" if value.is_integer() else f"{value:,.1f}"
+        ax.annotate(rank_label(x), xy=(x, 0), xycoords=ax.get_xaxis_transform(),
+                    xytext=(0, -28), textcoords="offset points", ha="center", va="top",
+                    color=COLORS["KOVAR"], fontsize=8, annotation_clip=False)
+        ax.annotate(rank_label(y), xy=(0, y), xycoords=ax.get_yaxis_transform(),
+                    xytext=(-38, 0), textcoords="offset points", ha="right", va="center",
+                    color=COLORS["KOVAR"], fontsize=8, annotation_clip=False)
+        ax.xaxis.labelpad = 35
+        ax.yaxis.labelpad = 65
     ax.legend(frameon=False, fontsize=8)
     return save(fig, output, f"{panel}_{data['case']['case_id']}_identical_pair_ranks", args.formats)
 
@@ -321,7 +337,7 @@ def panel_c(rows: list[dict], output: Path, args) -> list[str]:
     for method in COLORS:
         subset = [row for row in recovery if row["method"] == method]
         ax.plot(range(len(groups)), [row["recovery_fraction"] for row in subset],
-                marker="o", color=COLORS[method], linewidth=1, label=method)
+                marker="o", color=COLORS[method], linestyle=LINESTYLES[method], linewidth=1, label=method)
     ax.set(xticks=range(len(groups)), xticklabels=labels, ylim=(-.03, 1.05),
            ylabel=f"Fraction of cases with target pair in top {100 * args.top_fraction:g}%",
            xlim=(-.5, len(groups) - .5))
@@ -372,26 +388,28 @@ def panel_a(data: dict, output: Path, args) -> list[str]:
     if not any(len(values) for _label, values in groups):
         raise ValueError(f"{data['case']['case_id']}: no finite KOVAR P values for panel A")
     stem = f"A_{data['case']['case_id']}_kovar_qq"
-    fig, ax = plt.subplots(figsize=(5.2, 4.8), layout="constrained")
+    fig, ax = plt.subplots(figsize=(5.2, 5.2), layout="constrained")
     maximum = 1.
     table = output / f"{stem}.tsv"
     with table.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(["case_id", "distance_group", "n_finite", "order", "expected_p", "observed_p"])
-        for (label, ordered), color in zip(groups, ("black", "red")):
+        for (label, ordered), color, style in zip(groups, ("black", COLORS["KOVAR"]), ("--", "-")):
             if not len(ordered):
                 continue
             expected = (np.arange(len(ordered)) + .5) / len(ordered)
             x, y = -np.log10(expected), -np.log10(np.maximum(ordered, P_FLOOR))
             indices = sample_indices(np.arange(len(ordered)), args.max_points)
-            ax.plot(x[indices], y[indices], color=color, linewidth=1.1,
+            ax.plot(x[indices], y[indices], color=color, linestyle=style, linewidth=1.1,
                     marker=".", markersize=2, label=f"{label} (n={len(ordered):,})")
             maximum = max(maximum, float(x.max()), float(y.max()))
             writer.writerows((data["case"]["case_id"], label, len(ordered), i + 1, e, p)
                              for i, (e, p) in enumerate(zip(expected, ordered)))
     ax.plot([0, maximum], [0, maximum], "--", color="black", linewidth=.8)
     ax.set(xlabel="Expected −log10(P)", ylabel="Observed −log10(KOVAR primary P)")
-    ax.grid(alpha=.18, linewidth=.6)
+    ax.set_xlim(0, maximum * 1.03)
+    ax.set_ylim(0, maximum * 1.03)
+    ax.set_aspect("equal", adjustable="box")
     ax.legend(frameon=False, fontsize=8)
     return save(fig, output, stem, args.formats) + [table.name]
 
@@ -445,7 +463,7 @@ def panel_recovery(rows: list[dict], output: Path, args) -> list[str]:
     import matplotlib.pyplot as plt
     hgt_values = sorted({float(row["cross_hgt_probability"]) for row in rows})
     fig, axes = plt.subplots(1, len(hgt_values), figsize=(3.1 * len(hgt_values), 3.7),
-                             sharey=True, squeeze=False, layout="constrained")
+                             sharey=False, squeeze=False, layout="constrained")
     summaries = []
     for ax, hgt in zip(axes[0], hgt_values):
         subset = [row for row in rows if float(row["cross_hgt_probability"]) == hgt]
@@ -460,12 +478,16 @@ def panel_recovery(rows: list[dict], output: Path, args) -> list[str]:
                                   "method": method, "budget_percent": budget, "n_replicates": len(group),
                                   "n_recovered": recovered, "recovery_fraction": fraction})
             ax.plot(args.budget_percent, fractions, color=COLORS[method],
-                    marker="o" if method == "MI" else "s", markersize=4, linewidth=1.2, label=method)
+                    linestyle=LINESTYLES[method], marker="o" if method == "MI" else "s",
+                    markersize=4, linewidth=1.2, label=method)
+        n_replicates = len({row["case_id"] for row in subset})
+        ax.set_yticks(np.linspace(0, 1, n_replicates + 1),
+                      labels=[f"{n}/{n_replicates}" for n in range(n_replicates + 1)])
         ax.set(xscale="log", xlabel="Distal-pair discovery budget (%)", ylim=(-.04, 1.04),
                xticks=args.budget_percent, xticklabels=[f"{x:g}" for x in args.budget_percent])
         ax.tick_params(axis="x", labelrotation=45)
         ax.grid(axis="y", alpha=.2)
-    axes[0][0].set_ylabel("Fraction of replicates recovering target pair")
+    axes[0][0].set_ylabel("Replicates recovering target pair")
     axes[0][0].legend(frameon=False)
     write_rows(output / "D_recovery_by_budget.tsv", summaries)
     write_rows(output / "D_recovery_per_replicate.tsv", rows)
